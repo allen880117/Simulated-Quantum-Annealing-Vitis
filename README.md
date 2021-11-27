@@ -1,2 +1,5 @@
 # Simulated-Quantum-Annealing-Vitis
-Simulated Quantum Annealing implemented in High-Level Synthesis with Xilinx Vitis 2021.1
+
+This repository is for Simulated Quantum Annealing implemented in High-Level Synthesis with Xilinx Vitis 2021.1.
+
+## Abstract
