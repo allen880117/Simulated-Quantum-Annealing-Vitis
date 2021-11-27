@@ -43,7 +43,7 @@ int main(int argc, char **argv) {
 
     // Trotters
     spin_t          trotters[NUM_TROT][NUM_SPIN];
-    spin_pack_u50_t trotters_pack[NUM_TROT][NUM_SPIN / PACKET_SIZE];
+    spin_pack_t trotters_pack[NUM_TROT][NUM_SPIN / PACKET_SIZE];
 
     // h
     fp_t h[NUM_SPIN];

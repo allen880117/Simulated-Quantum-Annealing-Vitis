@@ -120,8 +120,8 @@ inline void ReduceInter<1>(fp_t fp_buffer[NUM_STREAM][PACKET_SIZE]) {
  * - RunFinal : Add other terms and do the flip
  */
 namespace TrotterUnit {
-fp_t Run(const spin_pack_u50_t trotters_local[NUM_SPIN / PACKET_SIZE],
-         const fp_pack_t       jcoup_local[NUM_SPIN / PACKET_SIZE]) {
+fp_t Run(const spin_pack_t trotters_local[NUM_SPIN / PACKET_SIZE],
+         const fp_pack_t   jcoup_local[NUM_SPIN / PACKET_SIZE]) {
     /* Remove stage check for better timing */
 
     // Buffer for dh
@@ -171,7 +171,7 @@ SUM_UP:
 }
 
 void RunFinal(const u32_t stage, const info_t info, const state_t state, const fp_t dh,
-              spin_pack_u50_t trotters_local[NUM_SPIN / PACKET_SIZE]) {
+              spin_pack_t trotters_local[NUM_SPIN / PACKET_SIZE]) {
     bool inside = (stage >= info.t && stage < NUM_SPIN + info.t);
     if (inside) {
         // Cache
@@ -202,7 +202,7 @@ void RunFinal(const u32_t stage, const info_t info, const state_t state, const f
 }  // namespace TrotterUnit
 
 extern "C" {
-void QuantumMonteCarloU50(spin_pack_u50_t trotters[NUM_TROT][NUM_SPIN / PACKET_SIZE],
+void QuantumMonteCarloU50(spin_pack_t     trotters[NUM_TROT][NUM_SPIN / PACKET_SIZE],
                           const fp_pack_t jcoup[NUM_SPIN][NUM_SPIN / PACKET_SIZE],
                           const fp_t h[NUM_SPIN], const fp_t jperp, const fp_t beta,
                           const fp_t log_rand[NUM_TROT][NUM_SPIN]) {
@@ -216,7 +216,7 @@ void QuantumMonteCarloU50(spin_pack_u50_t trotters[NUM_TROT][NUM_SPIN / PACKET_S
 #pragma HLS AGGREGATE compact = auto variable = jcoup
 
     // Local trotters
-    spin_pack_u50_t trotters_local[NUM_TROT][NUM_SPIN / PACKET_SIZE];
+    spin_pack_t trotters_local[NUM_TROT][NUM_SPIN / PACKET_SIZE];
 // #pragma HLS BIND_STORAGE variable = trotters_local type = ram_2p impl = bram
 #pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = trotters_local
 #pragma HLS ARRAY_PARTITION dim = 2 type = cyclic factor = 2 variable = trotters_local

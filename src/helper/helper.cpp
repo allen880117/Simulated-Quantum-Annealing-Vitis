@@ -87,7 +87,7 @@ fp_t ComputeEnergyPerTrotter(int nSpin, spin_t trotter[NUM_SPIN],
 }
 
 void PackTrotters(
-    spin_pack_u50_t trotters_pack[NUM_TROT][NUM_SPIN / PACKET_SIZE],
+    spin_pack_t trotters_pack[NUM_TROT][NUM_SPIN / PACKET_SIZE],
     spin_t trotters[NUM_TROT][NUM_SPIN]) {
     for (int t = 0; t < NUM_TROT; t++) {
         for (int i = 0; i < NUM_SPIN / PACKET_SIZE; i++) {
@@ -99,7 +99,7 @@ void PackTrotters(
 }
 
 void UnpackTrotters(
-    spin_pack_u50_t trotters_pack[NUM_TROT][NUM_SPIN / PACKET_SIZE],
+    spin_pack_t trotters_pack[NUM_TROT][NUM_SPIN / PACKET_SIZE],
     spin_t trotters[NUM_TROT][NUM_SPIN]) {
     for (int t = 0; t < NUM_TROT; t++) {
         for (int i = 0; i < NUM_SPIN / PACKET_SIZE; i++) {

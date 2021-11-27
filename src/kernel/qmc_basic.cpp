@@ -1,11 +1,9 @@
 #include "../include/sqa.hpp"
 
 /* Quantum Monte-Carlo */
-void QuantumMonteCarloBasic(const int nTrot, const int nSpin,
-                            spin_t trotters[NUM_TROT][NUM_SPIN],
-                            const fp_t Jcoup[NUM_SPIN][NUM_SPIN],
-                            const fp_t h[NUM_SPIN], const fp_t Jperp,
-                            const fp_t Beta,
+void QuantumMonteCarloBasic(const int nTrot, const int nSpin, spin_t trotters[NUM_TROT][NUM_SPIN],
+                            const fp_t Jcoup[NUM_SPIN][NUM_SPIN], const fp_t h[NUM_SPIN],
+                            const fp_t Jperp, const fp_t Beta,
                             const fp_t logRandNumber[NUM_TROT][NUM_SPIN]) {
     /* Tunnel-related energy */
     // fp_t dHTunnel = 2.0f * Jperp * nTrot;
@@ -41,9 +39,9 @@ LOOP_TROTTERS:
             }
 
             /* Compute Engery from up and down trotter */
-            int up = (m == 0) ? (nTrot - 1) : (m - 1);
-            int down = (m == nTrot - 1) ? (0) : (m + 1);
-            spin_t up_trotter = trotters[up][i];
+            int    up           = (m == 0) ? (nTrot - 1) : (m - 1);
+            int    down         = (m == nTrot - 1) ? (0) : (m + 1);
+            spin_t up_trotter   = trotters[up][i];
             spin_t down_trotter = trotters[down][i];
             if (up_trotter == down_trotter) {
                 if (up_trotter)
@@ -60,14 +58,10 @@ LOOP_TROTTERS:
 
             /* Times -2 and itself */
             dH *= -2.0f;
-            if (!this_spin) {
-                dH = -dH;
-            }
+            if (!this_spin) { dH = -dH; }
 
             /* Flip */
-            if ((-Beta * dH) > logRandNumber[m][i]) {
-                trotters[m][i] = (!trotters[m][i]);
-            }
+            if ((-Beta * dH) > logRandNumber[m][i]) { trotters[m][i] = (!trotters[m][i]); }
         }
     }
 }

@@ -2,20 +2,20 @@
 
 /* General Inpput State for Run Final */
 struct state_t {
-    u32_t  i_pack;         // pack index of current spin
-    u32_t  i_spin;         // spin index of current spin
-    spin_t up_spin;        // spin from up trotter
-    spin_t down_spin;      // spin from down trotter
-    fp_t   h_local;        // cache h
-    fp_t   log_rand_local; // cache log rand
+    u32_t  i_pack;          // pack index of current spin
+    u32_t  i_spin;          // spin index of current spin
+    spin_t up_spin;         // spin from up trotter
+    spin_t down_spin;       // spin from down trotter
+    fp_t   h_local;         // cache h
+    fp_t   log_rand_local;  // cache log rand
 };
 
 /* Fix Info for Run Final */
 struct info_t {
-    u32_t t;             // Number of this trotter
-    fp_t  beta;          // beta
-    fp_t  dh_tunnel;     // + tunnel energy
-    fp_t  neg_dh_tunnel; // - tunnel energy
+    u32_t t;              // Number of this trotter
+    fp_t  beta;           // beta
+    fp_t  dh_tunnel;      // + tunnel energy
+    fp_t  neg_dh_tunnel;  // - tunnel energy
 };
 
 /*
@@ -54,8 +54,9 @@ inline fp_t Multiply(spin_t spin, fp_t jcoup) {
  * - Recursion using template meta programming
  * - Reduce Intra-Buffer
  */
-template <u32_t BUF_SIZE, u32_t GAP_SIZE> inline void ReduceIntra(fp_t fp_buffer[BUF_SIZE]) {
-#pragma HLS                                           INLINE
+template <u32_t BUF_SIZE, u32_t GAP_SIZE>
+inline void ReduceIntra(fp_t fp_buffer[BUF_SIZE]) {
+#pragma HLS INLINE
     // Next call
     ReduceIntra<BUF_SIZE, GAP_SIZE / 2>(fp_buffer);
 
@@ -70,7 +71,10 @@ REDUCE_INTRA:
 /*
  * ReduceIntra (BOTTOM)(BUF_SIZE = PACKET_SIZE)
  */
-template <> inline void ReduceIntra<PACKET_SIZE, 1>(fp_t fp_buffer[PACKET_SIZE]) { ; }
+template <>
+inline void ReduceIntra<PACKET_SIZE, 1>(fp_t fp_buffer[PACKET_SIZE]) {
+    ;
+}
 
 /*
  * ReduceIntra (BOTTOM)(BUF_SIZE = NUM_SPIN / PACKET_SIZE / NUM_STREAM)
@@ -88,8 +92,9 @@ inline void ReduceIntra<NUM_SPIN / PACKET_SIZE / NUM_STREAM, 1>(
  * - Recursion using template meta programming
  * - Reduce Inter-Buffers
  */
-template <u32_t N_STRM> inline void ReduceInter(fp_t fp_buffer[NUM_STREAM][PACKET_SIZE]) {
-#pragma HLS                         INLINE
+template <u32_t N_STRM>
+inline void ReduceInter(fp_t fp_buffer[NUM_STREAM][PACKET_SIZE]) {
+#pragma HLS INLINE
     // Next call
     ReduceInter<N_STRM / 2>(fp_buffer);
 
@@ -104,7 +109,10 @@ REDUCE_INTER:
 /*
  * ReduceInter (BOTTOM)
  */
-template <> inline void ReduceInter<1>(fp_t fp_buffer[NUM_STREAM][PACKET_SIZE]) { ; }
+template <>
+inline void ReduceInter<1>(fp_t fp_buffer[NUM_STREAM][PACKET_SIZE]) {
+    ;
+}
 
 /*
  * Trotter Unit
@@ -112,8 +120,8 @@ template <> inline void ReduceInter<1>(fp_t fp_buffer[NUM_STREAM][PACKET_SIZE]) 
  * - RunFinal : Add other terms and do the flip
  */
 namespace TrotterUnit {
-fp_t Run(const spin_pack_u50_t trotters_local[NUM_SPIN / PACKET_SIZE],
-         const fp_pack_t       jcoup_local[NUM_SPIN / PACKET_SIZE / NUM_STREAM][NUM_STREAM]) {
+fp_t Run(const spin_pack_t trotters_local[NUM_SPIN / PACKET_SIZE],
+         const fp_pack_t   jcoup_local[NUM_SPIN / PACKET_SIZE / NUM_STREAM][NUM_STREAM]) {
     /* Remove stage check for better timing */
 
     // Buffer for dh
@@ -163,7 +171,7 @@ SUM_UP:
 }
 
 void RunFinal(const u32_t stage, const info_t info, const state_t state, const fp_t dh,
-              spin_pack_u50_t trotters_local[NUM_SPIN / PACKET_SIZE]) {
+              spin_pack_t trotters_local[NUM_SPIN / PACKET_SIZE]) {
     bool inside = (stage >= info.t && stage < NUM_SPIN + info.t);
     if (inside) {
         // Cache
@@ -172,9 +180,7 @@ void RunFinal(const u32_t stage, const info_t info, const state_t state, const f
 
         // Add dh_tunnel
         bool same_dir = (state.up_spin == state.down_spin);
-        if (same_dir) {
-            dh_tmp += (state.up_spin) ? info.neg_dh_tunnel : info.dh_tunnel;
-        }
+        if (same_dir) { dh_tmp += (state.up_spin) ? info.neg_dh_tunnel : info.dh_tunnel; }
 
         // Times 2.0f then Add h_local
         dh_tmp *= 2.0f;
@@ -185,9 +191,7 @@ void RunFinal(const u32_t stage, const info_t info, const state_t state, const f
          * EqualTo:          spin(i) * dHTmp > lrn / Beta / 2
          */
         // Times this_spin
-        if (!this_spin) {
-            dh_tmp = Sign(dh_tmp);
-        }
+        if (!this_spin) { dh_tmp = Sign(dh_tmp); }
 
         // Flip and Return
         if ((dh_tmp) > state.log_rand_local / info.beta * 0.5f) {
@@ -195,10 +199,10 @@ void RunFinal(const u32_t stage, const info_t info, const state_t state, const f
         }
     }
 }
-} // namespace TrotterUnit
+}  // namespace TrotterUnit
 
 extern "C" {
-void QuantumMonteCarloU50(spin_pack_u50_t trotters[NUM_TROT][NUM_SPIN / PACKET_SIZE],
+void QuantumMonteCarloU50(spin_pack_t     trotters[NUM_TROT][NUM_SPIN / PACKET_SIZE],
                           const fp_pack_t jcoup_0[NUM_SPIN][NUM_SPIN / PACKET_SIZE / NUM_STREAM],
                           const fp_pack_t jcoup_1[NUM_SPIN][NUM_SPIN / PACKET_SIZE / NUM_STREAM],
                           const fp_pack_t jcoup_2[NUM_SPIN][NUM_SPIN / PACKET_SIZE / NUM_STREAM],
@@ -221,7 +225,7 @@ void QuantumMonteCarloU50(spin_pack_u50_t trotters[NUM_TROT][NUM_SPIN / PACKET_S
 #pragma HLS AGGREGATE compact = auto variable = jcoup_3
 
     // Local trotters
-    spin_pack_u50_t trotters_local[NUM_TROT][NUM_SPIN / PACKET_SIZE];
+    spin_pack_t trotters_local[NUM_TROT][NUM_SPIN / PACKET_SIZE];
 // #pragma HLS BIND_STORAGE variable = trotters_local type = ram_2p impl = bram
 #pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = trotters_local
 #pragma HLS ARRAY_PARTITION dim = 2 type = cyclic factor = 2 variable = trotters_local

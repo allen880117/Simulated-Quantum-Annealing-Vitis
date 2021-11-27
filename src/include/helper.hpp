@@ -27,12 +27,12 @@ fp_t ComputeEnergyPerTrotter(int nSpin, spin_t trotter[NUM_SPIN],
 
 /* Convert trotters into pack form*/
 void PackTrotters(
-    spin_pack_u50_t trotters_pack[NUM_TROT][NUM_SPIN / PACKET_SIZE],
+    spin_pack_t trotters_pack[NUM_TROT][NUM_SPIN / PACKET_SIZE],
     spin_t trotters[NUM_TROT][NUM_SPIN]);
 
 /* Unpack trotters */
 void UnpackTrotters(
-    spin_pack_u50_t trotters_pack[NUM_TROT][NUM_SPIN / PACKET_SIZE],
+    spin_pack_t trotters_pack[NUM_TROT][NUM_SPIN / PACKET_SIZE],
     spin_t trotters[NUM_TROT][NUM_SPIN]);
 
 /* Convert Jcoup into pack form */

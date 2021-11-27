@@ -8,6 +8,7 @@
 #include "experimental/xrt_device.h"
 #include "experimental/xrt_kernel.h"
 #include "matplotlibcpp.h"
+#include "ap_int.h"
 
 #define LIVE_UPDATE 0
 
@@ -17,9 +18,7 @@
 #define LOG2_PACKET_SIZE 6
 #define NUM_STREAM 2
 #define LOG2_NUM_STREAM 1
-#define HALF_NUM_STREAM 1
 #define NUM_FADD 64
-#define COPYSIGNF 0
 
 typedef unsigned int u32_t;
 typedef int          i32_t;
@@ -32,7 +31,7 @@ typedef struct {
     fp_t data[PACKET_SIZE];
 } fp_pack_t;
 typedef ap_uint<PACKET_SIZE * NUM_STREAM> spin_pack_t;
-typedef ap_uint<PACKET_SIZE>              spin_pack_u50_t;
+typedef ap_uint<PACKET_SIZE>              spin_pack_t;
 
 // fp_t Jcoup[NUM_SPIN][NUM_SPIN];
 fp_t h[NUM_SPIN];
@@ -80,7 +79,7 @@ int main(int argc, char** argv) {
     // Allocate input buffer in global memory
     std::cout << "[INFO][-] -> Allocate Buffer in Global Memory" << std::endl;
 
-    const size_t trots_size_in_bytes = NUM_TROT * NUM_SPIN / PACKET_SIZE * sizeof(spin_pack_u50_t);
+    const size_t trots_size_in_bytes = NUM_TROT * NUM_SPIN / PACKET_SIZE * sizeof(spin_pack_t);
     const size_t Jcoup_size_in_bytes =
         NUM_SPIN * NUM_SPIN / PACKET_SIZE / NUM_STREAM * sizeof(fp_pack_t);
     const size_t h_size_in_bytes       = NUM_SPIN * sizeof(fp_t);
@@ -94,7 +93,7 @@ int main(int argc, char** argv) {
 
     // Map the contents of the buffer object into host memory
     std::cout << "[INFO][-] -> Map the buffer into the host memory" << std::endl;
-    spin_pack_u50_t* bo_trotters_map = bo_trotters.map<spin_pack_u50_t*>();
+    spin_pack_t* bo_trotters_map = bo_trotters.map<spin_pack_t*>();
     fp_pack_t* bo_Jcoup_0_map = bo_Jcoup_0.map<fp_pack_t*>();  // Type cast from fp_pack_t to fp_t
     fp_pack_t* bo_Jcoup_1_map = bo_Jcoup_1.map<fp_pack_t*>();  // Type cast from fp_pack_t to fp_t
     fp_t*      bo_h_map       = bo_h.map<fp_t*>();
