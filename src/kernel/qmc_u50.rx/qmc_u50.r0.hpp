@@ -21,18 +21,18 @@
 #if COND(2)
     #define NUM_TROT         4
     #define NUM_SPIN         4096
-    #define PACKET_SIZE      64
-    #define LOG2_PACKET_SIZE 6
-    #define NUM_STREAM       2
-    #define LOG2_NUM_STREAM  1
+    #define PACKET_SIZE      1
+    #define LOG2_PACKET_SIZE 0
+    #define NUM_STREAM       1
+    #define LOG2_NUM_STREAM  0
     #define NUM_FADD         64
 #elif COND(3)
     #define NUM_TROT         4
     #define NUM_SPIN         32
-    #define PACKET_SIZE      16
-    #define LOG2_PACKET_SIZE 4
-    #define NUM_STREAM       2
-    #define LOG2_NUM_STREAM  1
+    #define PACKET_SIZE      1
+    #define LOG2_PACKET_SIZE 0
+    #define NUM_STREAM       1
+    #define LOG2_NUM_STREAM  0
     #define NUM_FADD         64
 #endif
 
