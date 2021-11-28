@@ -28,6 +28,71 @@ inline fp_t Multiply(spin_t spin, fp_t jcoup) {
 }
 
 /*
+ * ReduceIntra (TOP)(BUF_SIZE = PACKET_SIZE)
+ * - Recursion using template meta programming
+ * - Reduce Intra-Buffer
+ */
+template <u32_t BUF_SIZE, u32_t GAP_SIZE>
+inline void ReduceIntra(fp_t fp_buffer[BUF_SIZE]) {
+#pragma HLS INLINE
+    // Next call
+    ReduceIntra<BUF_SIZE, GAP_SIZE / 2>(fp_buffer);
+
+    // Reduce Intra
+REDUCE_INTRA:
+    for (u32_t i = 0; i < BUF_SIZE; i += GAP_SIZE) {
+#pragma HLS UNROLL
+        fp_buffer[i] += fp_buffer[i + GAP_SIZE / 2];
+    }
+}
+
+/*
+ * ReduceIntra (BOTTOM)(BUF_SIZE = PACKET_SIZE)
+ */
+template <>
+inline void ReduceIntra<PACKET_SIZE, 1>(fp_t fp_buffer[PACKET_SIZE]) {
+    ;
+}
+
+/*
+ * ReduceIntra (BOTTOM)(BUF_SIZE = NUM_SPIN / PACKET_SIZE / NUM_STREAM)
+ */
+#if (NUM_SPIN / PACKET_SIZE / NUM_STREAM != PACKET_SIZE)
+template <>
+inline void ReduceIntra<NUM_SPIN / PACKET_SIZE / NUM_STREAM, 1>(
+    fp_t fp_buffer[NUM_SPIN / PACKET_SIZE / NUM_STREAM]) {
+    ;
+}
+#endif
+
+/*
+ * ReduceInter (TOP)
+ * - Recursion using template meta programming
+ * - Reduce Inter-Buffers
+ */
+template <u32_t N_STRM>
+inline void ReduceInter(fp_t fp_buffer[NUM_STREAM][PACKET_SIZE]) {
+#pragma HLS INLINE
+    // Next call
+    ReduceInter<N_STRM / 2>(fp_buffer);
+
+    // Reduce Inter
+REDUCE_INTER:
+    for (u32_t i = 0; i < NUM_STREAM; i += N_STRM) {
+#pragma HLS UNROLL
+        fp_buffer[i][0] += fp_buffer[i + N_STRM / 2][0];
+    }
+}
+
+/*
+ * ReduceInter (BOTTOM)
+ */
+template <>
+inline void ReduceInter<1>(fp_t fp_buffer[NUM_STREAM][PACKET_SIZE]) {
+    ;
+}
+
+/*
  * Trotter Unit
  * - UpdateOfTrotters      : Sum up spin[j] * Jcoup[i][j]
  * - UpdateOfTrottersFinal : Add other terms and do the flip
@@ -35,7 +100,7 @@ inline fp_t Multiply(spin_t spin, fp_t jcoup) {
 fp_t UpdateOfTrotters(const spin_pack_t trotters_local[NUM_SPIN / PACKET_SIZE],
                       const fp_pack_t   jcoup_local[NUM_SPIN / PACKET_SIZE]) {
     // Buffer for de
-    fp_t de_tmp = 0.0f;
+    fp_t de_tmp[NUM_SPIN / PACKET_SIZE / NUM_STREAM];
 
     // Sum up
 SUM_UP:
@@ -45,20 +110,39 @@ SUM_UP:
         // CTX_PRAGMA(HLS ALLOCATION operation instances = fadd limit = 64)
         CTX_PRAGMA(HLS PIPELINE)
 
+        // Buffer for source of adder
+        fp_t fp_buffer[NUM_STREAM][PACKET_SIZE];
+
         // Unpack and Multiply
     UNPACK_STREAM:
         for (u32_t strm_ofst = 0; strm_ofst < NUM_STREAM; strm_ofst++) {
+#pragma HLS UNROLL
+
         UNPACK_PACK:
             for (u32_t spin_ofst = 0; spin_ofst < PACKET_SIZE; spin_ofst++) {
+#pragma HLS UNROLL
                 // Multiply
-                de_tmp += Multiply(trotters_local[pack_ofst + strm_ofst][spin_ofst],
-                                   jcoup_local[pack_ofst + strm_ofst].data[spin_ofst]);
+                fp_buffer[strm_ofst][spin_ofst] =
+                    Multiply(trotters_local[pack_ofst + strm_ofst][spin_ofst],
+                             jcoup_local[pack_ofst + strm_ofst].data[spin_ofst]);
             }
+
+            // Reduce inside each fp_buffer
+            ReduceIntra<PACKET_SIZE, PACKET_SIZE>(fp_buffer[strm_ofst]);
         }
+
+        // Reduce between different fp_buffer
+        ReduceInter<NUM_STREAM>(fp_buffer);
+
+        // Write into de_tmp buffer
+        de_tmp[ofst] = fp_buffer[0][0];
     }
 
+    // Reduce between de_tmp buffers
+    ReduceIntra<NUM_SPIN / PACKET_SIZE / NUM_STREAM, NUM_SPIN / PACKET_SIZE / NUM_STREAM>(de_tmp);
+
     // Return
-    return de_tmp;
+    return de_tmp[0];
 }
 
 void UpdateOfTrottersFinal(const u32_t stage, const info_t info, const state_t state, const fp_t de,
@@ -150,7 +234,6 @@ READ_TROTTERS:
     // Loop of stage
 LOOP_STAGE:
     for (u32_t stage = 0; stage < (NUM_SPIN + NUM_TROT - 1); stage++) {
-
         // Update offset, h_local, log_rand_local
     UPDATE_OFST_H_LRN:
         for (u32_t t = 0; t < NUM_TROT; t++) {
