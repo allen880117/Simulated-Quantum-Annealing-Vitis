@@ -12,8 +12,8 @@ struct state_t {
 
 /* Fix Info for Run Final */
 struct info_t {
-    u32_t t;              // Number of this trotter
-    fp_t  beta;           // beta
+    u32_t t;             // Number of this trotter
+    fp_t  beta;          // beta
     fp_t  de_qefct;      // + qefct energy
     fp_t  neg_de_qefct;  // - qefct energy
 };
@@ -29,14 +29,11 @@ inline fp_t Multiply(spin_t spin, fp_t jcoup) {
 
 /*
  * Trotter Unit
- * - Run      : Sum up spin[j] * Jcoup[i][j]
- * - RunFinal : Add other terms and do the flip
+ * - UpdateOfTrotters      : Sum up spin[j] * Jcoup[i][j]
+ * - UpdateOfTrottersFinal : Add other terms and do the flip
  */
-namespace TrotterUnit {
-fp_t Run(const spin_pack_t trotters_local[NUM_SPIN / PACKET_SIZE],
-         const fp_pack_t   jcoup_local[NUM_SPIN / PACKET_SIZE]) {
-    /* Remove stage check for better timing */
-
+fp_t UpdateOfTrotters(const spin_pack_t trotters_local[NUM_SPIN / PACKET_SIZE],
+                      const fp_pack_t   jcoup_local[NUM_SPIN / PACKET_SIZE]) {
     // Buffer for de
     fp_t de_tmp = 0.0f;
 
@@ -54,9 +51,8 @@ SUM_UP:
         UNPACK_PACK:
             for (u32_t spin_ofst = 0; spin_ofst < PACKET_SIZE; spin_ofst++) {
                 // Multiply
-                de_tmp +=
-                    Multiply(trotters_local[pack_ofst + strm_ofst][spin_ofst],
-                             jcoup_local[pack_ofst + strm_ofst].data[spin_ofst]);
+                de_tmp += Multiply(trotters_local[pack_ofst + strm_ofst][spin_ofst],
+                                   jcoup_local[pack_ofst + strm_ofst].data[spin_ofst]);
             }
         }
     }
@@ -65,8 +61,8 @@ SUM_UP:
     return de_tmp;
 }
 
-void RunFinal(const u32_t stage, const info_t info, const state_t state, const fp_t de,
-              spin_pack_t trotters_local[NUM_SPIN / PACKET_SIZE]) {
+void UpdateOfTrottersFinal(const u32_t stage, const info_t info, const state_t state, const fp_t de,
+                           spin_pack_t trotters_local[NUM_SPIN / PACKET_SIZE]) {
     bool inside = (stage >= info.t && stage < NUM_SPIN + info.t);
     if (inside) {
         // Cache
@@ -94,7 +90,6 @@ void RunFinal(const u32_t stage, const info_t info, const state_t state, const f
         }
     }
 }
-}  // namespace TrotterUnit
 
 extern "C" {
 void QuantumMonteCarloU50(spin_pack_t     trotters[NUM_TROT][NUM_SPIN / PACKET_SIZE],
@@ -121,6 +116,12 @@ void QuantumMonteCarloU50(spin_pack_t     trotters[NUM_TROT][NUM_SPIN / PACKET_S
 #pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = jcoup_local
 #pragma HLS ARRAY_PARTITION dim = 2 type = cyclic factor = 2 variable = jcoup_local
 
+    // input state and de
+    state_t state[NUM_TROT];
+    fp_t    de[NUM_TROT];
+#pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = state
+#pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = de
+
     // qefct-Related Energy
     const fp_t de_qefct     = jperp * ((fp_t)NUM_TROT);
     const fp_t neg_de_qefct = -(de_qefct);
@@ -130,8 +131,8 @@ void QuantumMonteCarloU50(spin_pack_t     trotters[NUM_TROT][NUM_SPIN / PACKET_S
 INIT_INFO:
     for (u32_t t = 0; t < NUM_TROT; t++) {
 #pragma HLS UNROLL
-        info[t].t             = t;
-        info[t].beta          = beta;
+        info[t].t            = t;
+        info[t].beta         = beta;
         info[t].de_qefct     = de_qefct;
         info[t].neg_de_qefct = neg_de_qefct;
     }
@@ -149,11 +150,6 @@ READ_TROTTERS:
     // Loop of stage
 LOOP_STAGE:
     for (u32_t stage = 0; stage < (NUM_SPIN + NUM_TROT - 1); stage++) {
-        // input state and de
-        state_t state[NUM_TROT];
-        fp_t    de[NUM_TROT];
-#pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = state
-#pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = de
 
         // Update offset, h_local, log_rand_local
     UPDATE_OFST_H_LRN:
@@ -177,27 +173,24 @@ LOOP_STAGE:
         }
 
         // Read New Jcuop[0]
-        /* Remove if condition enable the overlap of read request */
-        // if (stage < NUM_SPIN) {
     READ_JCOUP:
         for (u32_t ofst = 0; ofst < NUM_SPIN / PACKET_SIZE; ofst++) {
 #pragma HLS PIPELINE
             jcoup_local[0][ofst] = jcoup[stage & (NUM_SPIN - 1)][ofst];
         }
-        // }
 
         // Run Trotter Units
-    RUN_TU:
+    UPDATE_OF_TROTTERS:
         for (u32_t t = 0; t < NUM_TROT; t++) {
 #pragma HLS UNROLL
-            de[t] = TrotterUnit::Run(trotters_local[t], jcoup_local[t]);
+            de[t] = UpdateOfTrotters(trotters_local[t], jcoup_local[t]);
         }
 
         // Run final step of Trotter Units
-    RUN_TU_FINAL:
+    UPDATE_OF_TROTTERS_FINAL:
         for (u32_t t = 0; t < NUM_TROT; t++) {
 #pragma HLS UNROLL
-            TrotterUnit::RunFinal(stage, info[t], state[t], de[t], trotters_local[t]);
+            UpdateOfTrottersFinal(stage, info[t], state[t], de[t], trotters_local[t]);
         }
 
         // Shift down jcoup_local
