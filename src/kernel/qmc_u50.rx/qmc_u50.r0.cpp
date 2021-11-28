@@ -12,7 +12,7 @@ struct state_t {
 
 /* Fix Info for Run Final */
 struct info_t {
-    u32_t t;             // Number of this trotter
+    u32_t m;             // Number of this trotter
     fp_t  beta;          // beta
     fp_t  de_qefct;      // + qefct energy
     fp_t  neg_de_qefct;  // - qefct energy
@@ -63,7 +63,7 @@ SUM_UP:
 
 void UpdateOfTrottersFinal(const u32_t stage, const info_t info, const state_t state, const fp_t de,
                            spin_pack_t trotters_local[NUM_SPIN / PACKET_SIZE]) {
-    bool inside = (stage >= info.t && stage < NUM_SPIN + info.t);
+    bool inside = (stage >= info.m && stage < NUM_SPIN + info.m);
     if (inside) {
         // Cache
         fp_t   de_tmp    = de;
@@ -129,21 +129,21 @@ void QuantumMonteCarloU50(spin_pack_t     trotters[NUM_TROT][NUM_SPIN / PACKET_S
     // Fix info of trotter units
     info_t info[NUM_TROT];
 INIT_INFO:
-    for (u32_t t = 0; t < NUM_TROT; t++) {
+    for (u32_t m = 0; m < NUM_TROT; m++) {
 #pragma HLS UNROLL
-        info[t].t            = t;
-        info[t].beta         = beta;
-        info[t].de_qefct     = de_qefct;
-        info[t].neg_de_qefct = neg_de_qefct;
+        info[m].m            = m;
+        info[m].beta         = beta;
+        info[m].de_qefct     = de_qefct;
+        info[m].neg_de_qefct = neg_de_qefct;
     }
 
     // Read trotters to local memory
 READ_TROTTERS:
-    for (u32_t t = 0; t < NUM_TROT; t++) {
+    for (u32_t m = 0; m < NUM_TROT; m++) {
     READ_TROTTERS_1:
         for (u32_t ofst = 0; ofst < NUM_SPIN / PACKET_SIZE; ofst++) {
 #pragma HLS PIPELINE
-            trotters_local[t][ofst] = trotters[t][ofst];
+            trotters_local[m][ofst] = trotters[m][ofst];
         }
     }
 
@@ -152,24 +152,24 @@ LOOP_STAGE:
     for (u32_t stage = 0; stage < (NUM_SPIN + NUM_TROT - 1); stage++) {
 
         // Update offset, h_local, log_rand_local
-    UPDATE_OFST_H_LRN:
-        for (u32_t t = 0; t < NUM_TROT; t++) {
+    UPDATE_INPUT_STATE:
+        for (u32_t m = 0; m < NUM_TROT; m++) {
 #pragma HLS UNROLL
-            u32_t ofst = ((stage + NUM_SPIN - t) & (NUM_SPIN - 1));
+            u32_t ofst = ((stage + NUM_SPIN - m) & (NUM_SPIN - 1));
 
             // offset
-            state[t].i_pack = (ofst >> (LOG2_PACKET_SIZE));
-            state[t].i_spin = (ofst & (PACKET_SIZE - 1));
+            state[m].i_pack = (ofst >> (LOG2_PACKET_SIZE));
+            state[m].i_spin = (ofst & (PACKET_SIZE - 1));
 
             // h, lrn
-            state[t].h_local        = h[ofst];
-            state[t].log_rand_local = log_rand[t][ofst];
+            state[m].h_local        = h[ofst];
+            state[m].log_rand_local = log_rand[m][ofst];
 
             // up/down spin
-            u32_t up           = (t == 0) ? (NUM_TROT - 1) : (t - 1);
-            u32_t down         = (t == NUM_TROT - 1) ? (0) : (t + 1);
-            state[t].up_spin   = trotters_local[up][state[t].i_pack][state[t].i_spin];
-            state[t].down_spin = trotters_local[down][state[t].i_pack][state[t].i_spin];
+            u32_t up           = (m == 0) ? (NUM_TROT - 1) : (m - 1);
+            u32_t down         = (m == NUM_TROT - 1) ? (0) : (m + 1);
+            state[m].up_spin   = trotters_local[up][state[m].i_pack][state[m].i_spin];
+            state[m].down_spin = trotters_local[down][state[m].i_pack][state[m].i_spin];
         }
 
         // Read New Jcuop[0]
@@ -181,36 +181,36 @@ LOOP_STAGE:
 
         // Run Trotter Units
     UPDATE_OF_TROTTERS:
-        for (u32_t t = 0; t < NUM_TROT; t++) {
+        for (u32_t m = 0; m < NUM_TROT; m++) {
 #pragma HLS UNROLL
-            de[t] = UpdateOfTrotters(trotters_local[t], jcoup_local[t]);
+            de[m] = UpdateOfTrotters(trotters_local[m], jcoup_local[m]);
         }
 
         // Run final step of Trotter Units
     UPDATE_OF_TROTTERS_FINAL:
-        for (u32_t t = 0; t < NUM_TROT; t++) {
+        for (u32_t m = 0; m < NUM_TROT; m++) {
 #pragma HLS UNROLL
-            UpdateOfTrottersFinal(stage, info[t], state[t], de[t], trotters_local[t]);
+            UpdateOfTrottersFinal(stage, info[m], state[m], de[m], trotters_local[m]);
         }
 
         // Shift down jcoup_local
     SHIFT_JCOUP:
         for (u32_t ofst = 0; ofst < NUM_SPIN / PACKET_SIZE; ofst++) {
 #pragma HLS PIPELINE
-            for (i32_t t = NUM_TROT - 2; t >= 0; t--) {
+            for (i32_t m = NUM_TROT - 2; m >= 0; m--) {
 #pragma HLS UNROLL
-                jcoup_local[t + 1][ofst] = jcoup_local[t][ofst];
+                jcoup_local[m + 1][ofst] = jcoup_local[m][ofst];
             }
         }
     }
 
     // Write trotters_local to host memory
 WRITE_TROTTERS:
-    for (u32_t t = 0; t < NUM_TROT; t++) {
+    for (u32_t m = 0; m < NUM_TROT; m++) {
     WRITE_TROTTERS_1:
         for (u32_t ofst = 0; ofst < NUM_SPIN / PACKET_SIZE; ofst++) {
 #pragma HLS PIPELINE
-            trotters[t][ofst] = trotters_local[t][ofst];
+            trotters[m][ofst] = trotters_local[m][ofst];
         }
     }
 }
