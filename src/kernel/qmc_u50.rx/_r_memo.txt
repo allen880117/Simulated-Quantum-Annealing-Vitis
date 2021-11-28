@@ -2,3 +2,14 @@ r0:
     Prototype
     - Parallel Update
     - Shift-Register-Like Jcoup Cache
+
+r1:
+    Apply further optimization on latency
+    - Parallel Reduction
+    - Higher Bandwidth
+
+r2:
+    Apply prefetching
+
+r3:
+    Apply balence of latency and resource usage
