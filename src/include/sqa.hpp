@@ -53,7 +53,8 @@ void QuantumMonteCarloU50(
     /* Spins */
     spin_pack_t trotters[NUM_TROT][NUM_SPIN / PACKET_SIZE],
     /* Jcoup */
-    const fp_pack_t Jcoup[NUM_SPIN][NUM_SPIN / PACKET_SIZE],
+    const fp_pack_t Jcoup_0[NUM_SPIN][NUM_SPIN / PACKET_SIZE / NUM_STREAM],
+    const fp_pack_t Jcoup_1[NUM_SPIN][NUM_SPIN / PACKET_SIZE / NUM_STREAM],
     /* Array of h */
     const fp_t h[NUM_SPIN],
     /* Thermal Related */

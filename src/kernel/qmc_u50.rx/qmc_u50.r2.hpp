@@ -1,7 +1,7 @@
 #ifndef _SQA_HPP_
 #define _SQA_HPP_
 
-/* _QMC_U50_R1_HPP */
+/* _QMC_U50_R2_HPP */
 
 #include "hls_math.h"
 #include "hls_stream.h"

@@ -1,4 +1,5 @@
 #include "../include/sqa.hpp"
+/* _QMC_U50_R0_CPP */
 
 /* General Inpput State for Run Final */
 struct state_t {

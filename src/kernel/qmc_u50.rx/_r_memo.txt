@@ -12,4 +12,8 @@ r2:
     Apply prefetching
 
 r3:
+    Apply multi-channel interface
+    - balance IO and Computational Bound
+
+r4:
     Apply balence of latency and resource usage

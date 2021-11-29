@@ -1,5 +1,5 @@
 #include "../include/sqa.hpp"
-/* _QMC_U50_R4_CPP */
+/* _QMC_U50_R3_CPP */
 
 /* General Inpput State for Run Final */
 struct state_t {
@@ -20,34 +20,12 @@ struct info_t {
 };
 
 /*
- * Negate
- * - Negate the sign of single-precision float-point
- * - To reduce the usage of LUT (replace the xor)
- */
-inline float Negate(float input) {
-#pragma HLS  INLINE
-    union {
-        float    fp_data;
-        uint32_t int_data;
-    } converter;
-
-    converter.fp_data = input;
-
-    ap_uint<32> tmp = converter.int_data;
-    tmp[31]         = (~tmp[31]);
-
-    converter.int_data = tmp;
-
-    return converter.fp_data;
-}
-
-/*
  * Multiply
  * - Spin (boolean) times Jcoup
  */
 inline fp_t Multiply(spin_t spin, fp_t jcoup) {
 #pragma HLS INLINE
-    return ((!spin) ? (Negate(jcoup)) : (jcoup));
+    return ((!spin) ? (-(jcoup)) : (jcoup));
 }
 
 /*
@@ -190,7 +168,7 @@ void UpdateOfTrottersFinal(const u32_t stage, const info_t info, const state_t s
          * EqualTo:          spin(i) * deTmp > lrn / Beta / 2
          */
         // Times this_spin
-        if (!this_spin) { de_tmp = Negate(de_tmp); }
+        if (!this_spin) { de_tmp = -(de_tmp); }
 
         // Flip and Return
         if ((de_tmp) > state.log_rand_local / info.beta * 0.5f) {
@@ -241,7 +219,7 @@ void QuantumMonteCarloU50(spin_pack_t     trotters[NUM_TROT][NUM_SPIN / PACKET_S
 
     // qefct-Related Energy
     const fp_t de_qefct     = jperp * ((fp_t)NUM_TROT);
-    const fp_t neg_de_qefct = Negate(de_qefct);
+    const fp_t neg_de_qefct = -(de_qefct);
 
     // Fix info of trotter units
     info_t info[NUM_TROT];
