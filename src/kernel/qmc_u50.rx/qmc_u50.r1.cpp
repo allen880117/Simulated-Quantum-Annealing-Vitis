@@ -193,26 +193,25 @@ void QuantumMonteCarloU50(spin_pack_t     trotters[NUM_TROT][NUM_SPIN / PACKET_S
     // Local trotters
     spin_pack_t trotters_local[NUM_TROT][NUM_SPIN / PACKET_SIZE];
 #pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = trotters_local
-#pragma HLS ARRAY_PARTITION dim = 2 type = cyclic factor = 2 variable = trotters_local
 
     // Local jcoup
     fp_pack_t jcoup_local[NUM_TROT][NUM_SPIN / PACKET_SIZE];
 #pragma HLS AGGREGATE compact = auto variable = jcoup_local
 #pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = jcoup_local
-#pragma HLS ARRAY_PARTITION dim = 2 type = cyclic factor = 2 variable = jcoup_local
 
-    // input state and de
+    // input state and de and fix info of trotter units
     state_t state[NUM_TROT];
     fp_t    de[NUM_TROT];
+    info_t  info[NUM_TROT];
 #pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = state
 #pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = de
+#pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = info
 
     // qefct-Related Energy
     const fp_t de_qefct     = jperp * ((fp_t)NUM_TROT);
     const fp_t neg_de_qefct = -(de_qefct);
 
-    // Fix info of trotter units
-    info_t info[NUM_TROT];
+    // Initialize infos
 INIT_INFO:
     for (u32_t m = 0; m < NUM_TROT; m++) {
 #pragma HLS UNROLL
@@ -235,26 +234,20 @@ READ_TROTTERS:
     // Loop of stage
 LOOP_STAGE:
     for (u32_t stage = 0; stage < (NUM_SPIN + NUM_TROT - 1); stage++) {
-        
         // Update offset, h_local, log_rand_local
     UPDATE_INPUT_STATE:
         for (u32_t m = 0; m < NUM_TROT; m++) {
 #pragma HLS UNROLL
             u32_t ofst = ((stage + NUM_SPIN - m) & (NUM_SPIN - 1));
+            u32_t up   = (m == 0) ? (NUM_TROT - 1) : (m - 1);
+            u32_t down = (m == NUM_TROT - 1) ? (0) : (m + 1);
 
-            // offset
-            state[m].i_pack = (ofst >> (LOG2_PACKET_SIZE));
-            state[m].i_spin = (ofst & (PACKET_SIZE - 1));
-
-            // h, lrn
+            state[m].i_pack         = (ofst >> (LOG2_PACKET_SIZE));
+            state[m].i_spin         = (ofst & (PACKET_SIZE - 1));
+            state[m].up_spin        = trotters_local[up][state[m].i_pack][state[m].i_spin];
+            state[m].down_spin      = trotters_local[down][state[m].i_pack][state[m].i_spin];
             state[m].h_local        = h[ofst];
             state[m].log_rand_local = log_rand[m][ofst];
-
-            // up/down spin
-            u32_t up           = (m == 0) ? (NUM_TROT - 1) : (m - 1);
-            u32_t down         = (m == NUM_TROT - 1) ? (0) : (m + 1);
-            state[m].up_spin   = trotters_local[up][state[m].i_pack][state[m].i_spin];
-            state[m].down_spin = trotters_local[down][state[m].i_pack][state[m].i_spin];
         }
 
         // Read New Jcuop[0]
