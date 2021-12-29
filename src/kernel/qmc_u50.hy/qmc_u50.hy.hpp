@@ -2,6 +2,7 @@
 #define _SQA_HPP_
 
 /* _QMC_U50_HY_HPP */
+/* Special Edition for Hao-Yu Chung */
 
 #include "hls_math.h"
 #include "hls_stream.h"

@@ -1,5 +1,6 @@
 #include "../include/sqa.hpp"
 /* _QMC_U50_HY_CPP */
+/* Special Edition for Hao-Yu Chung */
 
 /* General Inpput State for Run Final */
 struct state_t {
