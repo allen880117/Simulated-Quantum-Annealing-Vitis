@@ -160,7 +160,7 @@ class qmc_hy_driver {
 
         // Read Log Random Number for Flipping
         for (int k = 0; k < NUM_TROT * NUM_SPIN; k++) {
-            this->bo_logRand_map[k] = log(unif(rng)) * (this->n_trot);
+            this->bo_logRand_map[k] = log(unif(rng)); // * (this->n_trot);
         }
 
         // Sync bo_logRand

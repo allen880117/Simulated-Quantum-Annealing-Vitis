@@ -54,7 +54,7 @@ void GenerateLogRandomNumber(int nTrot,
     // Generate Log Rand Number = log(unif(rng)) * nTrot
     for (int t = 0; t < NUM_TROT; t++) {
         for (int i = 0; i < NUM_SPIN; i++) {
-            log_rand_nums[t][i] = log(unif(rng)) * nTrot;
+            log_rand_nums[t][i] = log(unif(rng)); // * nTrot;
         }
     }
 }
