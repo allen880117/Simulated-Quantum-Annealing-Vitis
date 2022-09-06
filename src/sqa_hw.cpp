@@ -138,7 +138,7 @@ PREFETCH_JCOUP:
 #pragma HLS PIPELINE
         u32_t ofst               = (stage + 1) & (MAX_QUBIT_NUM - 1);
         jcoupPrefetch[colIdx][0] = jcoupMemBank0[ofst][colIdx];
-        jcoupPrefetch[colIdx][0] = jcoupMemBank1[ofst][colIdx];
+        jcoupPrefetch[colIdx][1] = jcoupMemBank1[ofst][colIdx];
     }
 }
 
