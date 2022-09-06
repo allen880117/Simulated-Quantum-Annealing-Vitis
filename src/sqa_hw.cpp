@@ -1,361 +1,254 @@
 #include "sqa.hpp"
-/* _QMC_U50_R4_CPP */
 
-/* General Inpput State for Run Final */
 struct state_t {
-    u32_t  i_pack;          // pack index of current spin
-    u32_t  i_spin;          // spin index of current spin
-    spin_t up_spin;         // spin from up trotter
-    spin_t down_spin;       // spin from down trotter
-    fp_t   h_local;         // cache h
-    fp_t   log_rand_local;  // cache log rand
+    u32_t   packIdx, qubitIdx;
+    qubit_t upQubit, dwQubit;
+    fp_t    h, rndNum;
 };
 
-/* Fix Info for Run Final */
 struct info_t {
-    u32_t m;             // Number of this trotter
-    fp_t  beta;          // beta
-    fp_t  de_qefct;      // + qefct energy
-    fp_t  neg_de_qefct;  // - qefct energy
+    u32_t trotIdx;
+    fp_t  qEffectPos, qEffectNeg;
 };
 
-/*
- * Negate
- * - Negate the sign of single-precision float-point
- * - To reduce the usage of LUT (replace the xor)
- */
-inline float Negate(float input)
+static fp_t negate(fp_t input)
 {
 #pragma HLS INLINE
     union {
-        float    fp_data;
-        uint32_t int_data;
+        float   fpData;
+        uint8_t uintData[sizeof(fp_t)];
     } converter;
-
-    converter.fp_data = input;
-
-    ap_uint<32> tmp = converter.int_data;
-    tmp[31]         = (~tmp[31]);
-
-    converter.int_data = tmp;
-
-    return converter.fp_data;
+    converter.fpData = input;
+    converter.uintData[sizeof(fp_t) - 1] ^= 0x80;
+    return converter.fpData;
 }
 
-/*
- * Multiply
- * - Spin (boolean) times Jcoup
- */
-inline fp_t Multiply(spin_t spin, fp_t jcoup)
+static fp_t multiply(qubit_t spin, fp_t jcoup)
 {
 #pragma HLS INLINE
-    return ((!spin) ? (Negate(jcoup)) : (jcoup));
+    return ((!spin) ? (negate(jcoup)) : (jcoup));
 }
 
-/*
- * ReduceIntra (TOP)(BUF_SIZE = PACKET_SIZE)
- * - Recursion using template meta programming
- * - Reduce Intra-Buffer
- */
-template <u32_t BUF_SIZE, u32_t GAP_SIZE>
-inline void ReduceIntra(fp_t fp_buffer[BUF_SIZE])
+template <u32_t STRIDE>
+void reduceInterDim(fp_t buf[JCOUP_BANK_NUM][PACKET_SIZE])
 {
-#pragma HLS INLINE
-    // Next call
-    ReduceIntra<BUF_SIZE, GAP_SIZE / 2>(fp_buffer);
-
-    // Reduce Intra
-REDUCE_INTRA:
-    for (u32_t i = 0; i < BUF_SIZE; i += GAP_SIZE) {
+    reduceInterDim<(STRIDE >> 1)>(buf);
+    for (u32_t i = 0; i < JCOUP_BANK_NUM; i += STRIDE) {
 #pragma HLS UNROLL
-        fp_buffer[i] += fp_buffer[i + GAP_SIZE / 2];
+        buf[i][0] += buf[i + (STRIDE >> 1)][0];
     }
 }
 
-/*
- * ReduceIntra (BOTTOM)(BUF_SIZE = PACKET_SIZE)
- */
 template <>
-inline void ReduceIntra<PACKET_SIZE, 1>(fp_t fp_buffer[PACKET_SIZE])
+void reduceInterDim<1>(fp_t buf[JCOUP_BANK_NUM][PACKET_SIZE])
 {
     ;
 }
 
-/*
- * ReduceIntra (BOTTOM)(BUF_SIZE = NUM_SPIN / PACKET_SIZE / NUM_STREAM)
- */
-#if (NUM_SPIN / PACKET_SIZE / NUM_STREAM != PACKET_SIZE)
+template <u32_t BUF_SIZE, u32_t STRIDE>
+void reduceIntraDim(fp_t buf[BUF_SIZE])
+{
+#pragma HLS INLINE
+    reduceIntraDim<BUF_SIZE, STRIDE / 2>(buf);
+    for (u32_t i = 0; i < BUF_SIZE; i += STRIDE) {
+#pragma HLS UNROLL
+        buf[i] += buf[i + STRIDE / 2];
+    }
+}
+
 template <>
-inline void ReduceIntra<NUM_SPIN / PACKET_SIZE / NUM_STREAM, 1>(
-    fp_t fp_buffer[NUM_SPIN / PACKET_SIZE / NUM_STREAM])
+void reduceIntraDim<PACKET_SIZE, 1>(fp_t buf[PACKET_SIZE])
+{
+    ;
+}
+
+#if (NUM_COL_JCOUP_MEM_BANK != PACKET_SIZE)
+template <>
+void reduceIntraDim<NUM_COL_JCOUP_MEM_BANK, 1>(fp_t buf[NUM_COL_JCOUP_MEM_BANK])
 {
     ;
 }
 #endif
 
 /*
- * ReduceInter (TOP)
- * - Recursion using template meta programming
- * - Reduce Inter-Buffers
- */
-template <u32_t N_STRM>
-inline void ReduceInter(fp_t fp_buffer[NUM_STREAM][PACKET_SIZE])
-{
-#pragma HLS INLINE
-    // Next call
-    ReduceInter<N_STRM / 2>(fp_buffer);
-
-    // Reduce Inter
-REDUCE_INTER:
-    for (u32_t i = 0; i < NUM_STREAM; i += N_STRM) {
-#pragma HLS UNROLL
-        fp_buffer[i][0] += fp_buffer[i + N_STRM / 2][0];
-    }
-}
-
-/*
- * ReduceInter (BOTTOM)
- */
-template <>
-inline void ReduceInter<1>(fp_t fp_buffer[NUM_STREAM][PACKET_SIZE])
-{
-    ;
-}
-
-/*
  * Trotter Unit
  * - UpdateOfTrotters      : Sum up spin[j] * Jcoup[i][j]
  * - UpdateOfTrottersFinal : Add other terms and do the flip
  */
-fp_t UpdateOfTrotters(const spin_pack_t trotters_local[NUM_SPIN / PACKET_SIZE],
-                      const fp_pack_t jcoup_local[NUM_SPIN / PACKET_SIZE / NUM_STREAM][NUM_STREAM])
+static fp_t calcEnergy(const qubitPack_t qubitsCache[NUM_COL_QUBIT_CACHE],
+                       const fpPack_t    jcoupCache[NUM_COL_JCOUP_MEM_BANK][JCOUP_BANK_NUM])
 {
-    // Buffer for de
-    fp_t de_tmp[NUM_SPIN / PACKET_SIZE / NUM_STREAM];
+#pragma HLS INLINE OFF
+    fp_t packLevelBuf[NUM_COL_JCOUP_MEM_BANK];
+    fp_t qubitLevelBuf[JCOUP_BANK_NUM][PACKET_SIZE];
 
-    // Sum up
-SUM_UP:
-    for (u32_t ofst = 0, pack_ofst = 0; ofst < NUM_SPIN / PACKET_SIZE / NUM_STREAM;
-         ofst++, pack_ofst += NUM_STREAM) {
-        // Pramgas: Pipeline and Confine the usage of fadd
+    for (u32_t colIdx = 0, packIdx = 0; colIdx < NUM_COL_JCOUP_MEM_BANK;
+         colIdx++, packIdx += JCOUP_BANK_NUM) {
         CTX_PRAGMA(HLS ALLOCATION operation instances = fadd limit = NUM_FADD)
-        CTX_PRAGMA(HLS PIPELINE)
-
-        // Buffer for source of adder
-        fp_t fp_buffer[NUM_STREAM][PACKET_SIZE];
-
-        // Unpack and Multiply
-    UNPACK_STREAM:
-        for (u32_t strm_ofst = 0; strm_ofst < NUM_STREAM; strm_ofst++) {
+#pragma HLS PIPELINE
+        for (u32_t bankIdx = 0; bankIdx < JCOUP_BANK_NUM; bankIdx++) {
 #pragma HLS UNROLL
-
-        UNPACK_PACK:
-            for (u32_t spin_ofst = 0; spin_ofst < PACKET_SIZE; spin_ofst++) {
+            for (u32_t qubitIdx = 0; qubitIdx < PACKET_SIZE; qubitIdx++) {
 #pragma HLS UNROLL
-                // Multiply
-                fp_buffer[strm_ofst][spin_ofst] =
-                    Multiply(trotters_local[pack_ofst + strm_ofst][spin_ofst],
-                             jcoup_local[ofst][strm_ofst].data[spin_ofst]);
+                qubitLevelBuf[bankIdx][qubitIdx] =
+                    multiply(qubitsCache[packIdx + bankIdx][qubitIdx],
+                             jcoupCache[colIdx][bankIdx].data[qubitIdx]);
             }
-
-            // Reduce inside each fp_buffer
-            ReduceIntra<PACKET_SIZE, PACKET_SIZE>(fp_buffer[strm_ofst]);
+            reduceIntraDim<PACKET_SIZE, PACKET_SIZE>(qubitLevelBuf[bankIdx]);
         }
-
-        // Reduce between different fp_buffer
-        ReduceInter<NUM_STREAM>(fp_buffer);
-
-        // Write into de_tmp buffer
-        de_tmp[ofst] = fp_buffer[0][0];
+        reduceInterDim<JCOUP_BANK_NUM>(qubitLevelBuf);
+        packLevelBuf[colIdx] = qubitLevelBuf[0][0];
     }
-
-    // Reduce between de_tmp buffers
-    ReduceIntra<NUM_SPIN / PACKET_SIZE / NUM_STREAM, NUM_SPIN / PACKET_SIZE / NUM_STREAM>(de_tmp);
-
-    // Return
-    return de_tmp[0];
+    reduceIntraDim<NUM_COL_JCOUP_MEM_BANK, NUM_COL_JCOUP_MEM_BANK>(packLevelBuf);
+    return packLevelBuf[0];
 }
 
-void UpdateOfTrottersFinal(const u32_t stage, const info_t info, const state_t state, const fp_t de,
-                           spin_pack_t trotters_local[NUM_SPIN / PACKET_SIZE])
+static void updateQubit(const u32_t stage, const info_t info, const state_t state,
+                        const fp_t energy, qubitPack_t qubitsCache[NUM_COL_QUBIT_CACHE])
 {
-    bool inside = (stage >= info.m && stage < NUM_SPIN + info.m);
-    if (inside) {
-        // Cache
-        fp_t   de_tmp    = de;
-        spin_t this_spin = trotters_local[state.i_pack][state.i_spin];
+    if ((stage < info.trotIdx) || stage >= MAX_QUBIT_NUM + info.trotIdx) return;
 
-        // Add de_qefct
-        bool same_dir = (state.up_spin == state.down_spin);
-        if (same_dir) { de_tmp += (state.up_spin) ? info.neg_de_qefct : info.de_qefct; }
+    fp_t    eTmp     = energy;
+    qubit_t thisSpin = qubitsCache[state.packIdx][state.qubitIdx];
 
-        // Times 2.0f then Add h_local
-        de_tmp *= 2.0f;
-        de_tmp += state.h_local;
+    bool same_dir = (state.upQubit == state.dwQubit);
+    if (same_dir) { eTmp += (state.upQubit) ? info.qEffectNeg : info.qEffectPos; }
 
-        /*
-         * Formula: - (-2) * spin(i) * deTmp > lrn / beta
-         * EqualTo:          spin(i) * deTmp > lrn / Beta / 2
-         */
-        // Times this_spin
-        if (!this_spin) { de_tmp = Negate(de_tmp); }
+    eTmp *= 2.0f;
+    eTmp += state.h;
 
-        // Flip and Return
-        if ((de_tmp) > state.log_rand_local / info.beta * 0.5f) {
-            trotters_local[state.i_pack][state.i_spin] = (~this_spin);
+    /*
+     * Formula: - (-2) * spin(i) * deTmp > lrn / beta
+     * EqualTo:          spin(i) * deTmp > lrn / Beta / 2
+     */
+    if (!thisSpin) { eTmp = negate(eTmp); }
+
+    // if ((de_tmp) > state.log_rand_local / info.beta * 0.5f) {}
+    if (eTmp > state.rndNum) { qubitsCache[state.packIdx][state.qubitIdx] = (~thisSpin); }
+}
+
+static void prefetchJcoup(i32_t    stage,
+                          fpPack_t jcoupMemBank0[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
+                          fpPack_t jcoupMemBank1[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
+                          fpPack_t jcoupPrefetch[NUM_COL_JCOUP_MEM_BANK][JCOUP_BANK_NUM])
+{
+#pragma HLS INLINE
+PREFETCH_JCOUP:
+    for (u32_t colIdx = 0; colIdx < NUM_COL_JCOUP_MEM_BANK; colIdx++) {
+#pragma HLS PIPELINE
+        u32_t ofst               = (stage + 1) & (MAX_QUBIT_NUM - 1);
+        jcoupPrefetch[colIdx][0] = jcoupMemBank0[ofst][colIdx];
+        jcoupPrefetch[colIdx][0] = jcoupMemBank1[ofst][colIdx];
+    }
+}
+
+static void prefetchRndNum(i32_t stage, fp_t rndNumMem[MAX_TROTTER_NUM][NUM_COL_RNDNUM_MEM],
+                           fp_t rndNumPrefetch[MAX_TROTTER_NUM])
+{
+#pragma HLS INLINE
+PREFETCH_RNDNUM:
+    for (u32_t trotIdx = 0; trotIdx < MAX_TROTTER_NUM; trotIdx++) {
+#pragma HLS UNROLL
+        u32_t colIdx            = (((stage + 1) + MAX_QUBIT_NUM - trotIdx) & (MAX_QUBIT_NUM - 1));
+        rndNumPrefetch[trotIdx] = rndNumMem[trotIdx][colIdx];
+    }
+}
+
+static void updateState(u32_t stage, state_t state[MAX_TROTTER_NUM], fp_t hCache[MAX_QUBIT_NUM],
+                        fp_t        rndNumPrefetch[MAX_TROTTER_NUM],
+                        qubitPack_t qubitsCache[MAX_TROTTER_NUM][NUM_COL_QUBIT_CACHE])
+{
+UPDATE_INPUT_STATE:
+    for (u32_t trotIdx = 0; trotIdx < MAX_TROTTER_NUM; trotIdx++) {
+#pragma HLS UNROLL
+        u32_t colIdx    = ((stage + MAX_QUBIT_NUM - trotIdx) & (MAX_QUBIT_NUM - 1));
+        u32_t upTrotIdx = (trotIdx == 0) ? (MAX_TROTTER_NUM - 1) : (trotIdx - 1);
+        u32_t dwTrotIdx = (trotIdx == MAX_TROTTER_NUM - 1) ? (0) : (trotIdx + 1);
+        u32_t packIdx   = colIdx / PACKET_SIZE;
+        u32_t qubitIdx  = colIdx % PACKET_SIZE;
+        state[trotIdx]  = state_t{.packIdx  = packIdx,
+                                  .qubitIdx = qubitIdx,
+                                  .upQubit  = qubitsCache[upTrotIdx][packIdx][qubitIdx],
+                                  .dwQubit  = qubitsCache[dwTrotIdx][packIdx][qubitIdx],
+                                  .h        = hCache[colIdx],
+                                  .rndNum   = rndNumPrefetch[trotIdx]};
+    }
+}
+
+static void shiftJcoupCache(
+    u32_t stage, fpPack_t jcoupCache[MAX_TROTTER_NUM][NUM_COL_JCOUP_MEM_BANK][JCOUP_BANK_NUM],
+    fpPack_t jcoupPrefetch[NUM_COL_JCOUP_MEM_BANK][JCOUP_BANK_NUM])
+{
+SHIFT_DOWN_JCOUP_CACHE:
+    for (u32_t colIdx = 0; colIdx < NUM_COL_JCOUP_MEM_BANK; colIdx++) {
+#pragma HLS PIPELINE
+        for (i32_t trotIdx = MAX_TROTTER_NUM - 2; trotIdx >= 0; trotIdx--) {
+#pragma HLS UNROLL
+            jcoupCache[trotIdx + 1][colIdx][0] = jcoupCache[trotIdx][colIdx][0];
+            jcoupCache[trotIdx + 1][colIdx][1] = jcoupCache[trotIdx][colIdx][1];
         }
+        jcoupCache[0][colIdx][0] = jcoupPrefetch[colIdx][0];
+        jcoupCache[0][colIdx][1] = jcoupPrefetch[colIdx][1];
     }
 }
 
 extern "C" {
-void RunSQAHardware(spin_pack_t     trotters[NUM_TROT][NUM_SPIN / PACKET_SIZE],
-                    const fp_pack_t jcoup_0[NUM_SPIN][NUM_SPIN / PACKET_SIZE / NUM_STREAM],
-                    const fp_pack_t jcoup_1[NUM_SPIN][NUM_SPIN / PACKET_SIZE / NUM_STREAM],
-                    const fp_t h[NUM_SPIN], const fp_t jperp, const fp_t beta,
-                    const fp_t log_rand[NUM_TROT][NUM_SPIN])
+void RunSQAHardware(u32_t nTrotters, u32_t nQubits, u32_t nSteps, fp_t jperp,
+                    fp_t hCache[MAX_QUBIT_NUM], fp_t rndNumMem[MAX_TROTTER_NUM][NUM_COL_RNDNUM_MEM],
+                    fpPack_t    jcoupMemBank0[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
+                    fpPack_t    jcoupMemBank1[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
+                    qubitPack_t qubitsCache[MAX_TROTTER_NUM][NUM_COL_QUBIT_CACHE])
 {
-    // Interface
-#pragma HLS INTERFACE mode = m_axi bundle = gmem0 port = trotters
-#pragma HLS INTERFACE mode = m_axi bundle = gmem1 port = jcoup_0
-#pragma HLS INTERFACE mode = m_axi bundle = gmem2 port = jcoup_1
-#pragma HLS INTERFACE mode = m_axi bundle = gmem3 port = h
-#pragma HLS INTERFACE mode = m_axi bundle = gmem4 port = log_rand
-
     // Pragma: Aggreate for better throughput
-#pragma HLS AGGREGATE compact = auto variable = jcoup_0
-#pragma HLS AGGREGATE compact = auto variable = jcoup_1
+#pragma HLS AGGREGATE compact = auto variable = jcoupMemBank0
+#pragma HLS AGGREGATE compact = auto variable = jcoupMemBank1
+#pragma HLS AGGREGATE compact = auto variable = qubitsCache
 
-    // Local trotters
-    spin_pack_t trotters_local[NUM_TROT][NUM_SPIN / PACKET_SIZE];
-#pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = trotters_local
+    // Pragma: Partition
+#pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = rndNumMem
+#pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = qubitsCache
 
-    // Local jcoup
-    fp_pack_t jcoup_local[NUM_TROT][NUM_SPIN / PACKET_SIZE / NUM_STREAM][NUM_STREAM];
-#pragma HLS AGGREGATE compact = auto variable = jcoup_local
-#pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = jcoup_local
+    // Jcoup Cache and Prefetch Storage
+    fpPack_t jcoupCache[MAX_TROTTER_NUM][NUM_COL_JCOUP_MEM_BANK][JCOUP_BANK_NUM];
+    fpPack_t jcoupPrefetch[NUM_COL_JCOUP_MEM_BANK][JCOUP_BANK_NUM];
+    fp_t     rndNumPrefetch[MAX_TROTTER_NUM];
+#pragma HLS AGGREGATE compact = auto variable = jcoupCache
+#pragma HLS AGGREGATE compact = auto variable = jcoupPrefetch
+#pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = jcoupCache
+#pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = rndNumPrefetch
 
-    // Prefetch jcoup, h, and log_rand
-    fp_pack_t jcoup_prefetch[NUM_SPIN / PACKET_SIZE / NUM_STREAM][NUM_STREAM];
-    fp_t      h_prefetch[NUM_TROT];
-    fp_t      log_rand_prefetch[NUM_TROT];
-#pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = h_prefetch
-#pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = log_rand_prefetch
-
-    // input state and de and fix info of trotter units
-    state_t state[NUM_TROT];
-    fp_t    de[NUM_TROT];
-    info_t  info[NUM_TROT];
+    // Quantum Effect and Input State and Info of PE
+    fp_t    qEffectPos = jperp * ((fp_t)nTrotters);
+    fp_t    qEffectNeg = negate(qEffectPos);
+    state_t state[MAX_TROTTER_NUM];
+    info_t  info[MAX_TROTTER_NUM];
 #pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = state
-#pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = de
 #pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = info
 
-    // qefct-Related Energy
-    const fp_t de_qefct     = jperp * ((fp_t)NUM_TROT);
-    const fp_t neg_de_qefct = Negate(de_qefct);
-
     // Initialize infos
-INIT_INFO:
-    for (u32_t m = 0; m < NUM_TROT; m++) {
+    for (u32_t trotIdx = 0; trotIdx < MAX_TROTTER_NUM; trotIdx++) {
 #pragma HLS UNROLL
-        info[m].m            = m;
-        info[m].beta         = beta;
-        info[m].de_qefct     = de_qefct;
-        info[m].neg_de_qefct = neg_de_qefct;
-    }
-
-    // Read trotters to local memory
-READ_TROTTERS:
-    for (u32_t m = 0; m < NUM_TROT; m++) {
-    READ_TROTTERS_1:
-        for (u32_t ofst = 0; ofst < NUM_SPIN / PACKET_SIZE; ofst++) {
-#pragma HLS PIPELINE
-            trotters_local[m][ofst] = trotters[m][ofst];
-        }
+        info[trotIdx] =
+            info_t{.trotIdx = trotIdx, .qEffectPos = qEffectPos, .qEffectNeg = qEffectNeg};
     }
 
     // Prefetch Jcoup before the loop of stages
-PREFETCH_JCOUP:
-    for (u32_t ofst = 0; ofst < NUM_SPIN / PACKET_SIZE / NUM_STREAM; ofst++) {
-#pragma HLS PIPELINE
-        jcoup_prefetch[ofst][0] = jcoup_0[0][ofst];
-        jcoup_prefetch[ofst][1] = jcoup_1[0][ofst];
-    }
+    prefetchJcoup(-1, jcoupMemBank0, jcoupMemBank1, jcoupPrefetch);
+    prefetchRndNum(-1, rndNumMem, rndNumPrefetch);
 
-    // Prefetch h and lr
-    h_prefetch[0]        = h[0];
-    log_rand_prefetch[0] = log_rand[0][0];
-
-    // Loop of stage
 LOOP_STAGE:
-    for (u32_t stage = 0; stage < (NUM_SPIN + NUM_TROT - 1); stage++) {
-        // Update offset, h_local, log_rand_local
-    UPDATE_INPUT_STATE:
-        for (u32_t m = 0; m < NUM_TROT; m++) {
+    for (u32_t stage = 0; stage < (MAX_QUBIT_NUM + MAX_TROTTER_NUM - 1); stage++) {
+#pragma HLS PIPELINE off
+        updateState(stage, state, hCache, rndNumPrefetch, qubitsCache);
+        prefetchRndNum(stage, rndNumMem, rndNumPrefetch);
+        shiftJcoupCache(stage, jcoupCache, jcoupPrefetch);
+        prefetchJcoup(stage, jcoupMemBank0, jcoupMemBank1, jcoupPrefetch);
+
+    UPDATE_QUBITS:
+        for (u32_t trotIdx = 0; trotIdx < MAX_TROTTER_NUM; trotIdx++) {
 #pragma HLS UNROLL
-            u32_t ofst = ((stage + NUM_SPIN - m) & (NUM_SPIN - 1));
-            u32_t up   = (m == 0) ? (NUM_TROT - 1) : (m - 1);
-            u32_t down = (m == NUM_TROT - 1) ? (0) : (m + 1);
-
-            state[m].i_pack         = (ofst >> (LOG2_PACKET_SIZE));
-            state[m].i_spin         = (ofst & (PACKET_SIZE - 1));
-            state[m].up_spin        = trotters_local[up][state[m].i_pack][state[m].i_spin];
-            state[m].down_spin      = trotters_local[down][state[m].i_pack][state[m].i_spin];
-            state[m].h_local        = h_prefetch[m];
-            state[m].log_rand_local = log_rand_prefetch[m];
-        }
-
-        // Read h and log_rand
-    READ_H_LR:
-        for (u32_t m = 0; m < NUM_TROT; m++) {
-#pragma HLS UNROLL
-            u32_t ofst           = (((stage + 1) + NUM_SPIN - m) & (NUM_SPIN - 1));
-            h_prefetch[m]        = h[ofst];
-            log_rand_prefetch[m] = log_rand[m][ofst];
-        }
-
-        // Shift down jcoup_local
-    SHIFT_JCOUP:
-        for (u32_t ofst = 0; ofst < NUM_SPIN / PACKET_SIZE / NUM_STREAM; ofst++) {
-#pragma HLS PIPELINE
-            for (i32_t m = NUM_TROT - 2; m >= 0; m--) {
-#pragma HLS UNROLL
-                jcoup_local[m + 1][ofst][0] = jcoup_local[m][ofst][0];
-                jcoup_local[m + 1][ofst][1] = jcoup_local[m][ofst][1];
-            }
-            jcoup_local[0][ofst][0] = jcoup_prefetch[ofst][0];
-            jcoup_local[0][ofst][1] = jcoup_prefetch[ofst][1];
-        }
-
-        // Read New Jcuop[0]
-    READ_JCOUP:
-        for (u32_t ofst = 0; ofst < NUM_SPIN / PACKET_SIZE / NUM_STREAM; ofst++) {
-#pragma HLS PIPELINE
-            jcoup_prefetch[ofst][0] = jcoup_0[(stage + 1) & (NUM_SPIN - 1)][ofst];
-            jcoup_prefetch[ofst][1] = jcoup_1[(stage + 1) & (NUM_SPIN - 1)][ofst];
-        }
-
-        // Run Trotter Units
-    UPDATE_OF_TROTTERS:
-        for (u32_t m = 0; m < NUM_TROT; m++) {
-#pragma HLS UNROLL
-            de[m] = UpdateOfTrotters(trotters_local[m], jcoup_local[m]);
-        }
-
-        // Run final step of Trotter Units
-    UPDATE_OF_TROTTERS_FINAL:
-        for (u32_t m = 0; m < NUM_TROT; m++) {
-#pragma HLS UNROLL
-            UpdateOfTrottersFinal(stage, info[m], state[m], de[m], trotters_local[m]);
-        }
-    }
-
-    // Write trotters_local to host memory
-WRITE_TROTTERS:
-    for (u32_t m = 0; m < NUM_TROT; m++) {
-    WRITE_TROTTERS_1:
-        for (u32_t ofst = 0; ofst < NUM_SPIN / PACKET_SIZE; ofst++) {
-#pragma HLS PIPELINE
-            trotters[m][ofst] = trotters_local[m][ofst];
+            fp_t e = calcEnergy(qubitsCache[trotIdx], jcoupCache[trotIdx]);
+            updateQubit(stage, info[trotIdx], state[trotIdx], e, qubitsCache[trotIdx]);
         }
     }
 }

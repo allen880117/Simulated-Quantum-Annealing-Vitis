@@ -1,56 +1,54 @@
-#ifndef _HELPER_HPP_
-#define _HELPER_HPP_
-
+#pragma once
 #include "sqa.hpp"
 
 /* Progress Bar */
-#define PBSTR "||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||"
+#define PBSTR   "||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||"
 #define PBWIDTH 60
 
 /* Print the progress bar */
 void PrintProgress(double percentage);
 
 /* Read Random Initial State */
-void ReadRandomState(spin_t trotters[NUM_TROT][NUM_SPIN], int nTrot, int nSpin,
-                     std::string file_path);
+void ReadRandomState(qubit_t trotters[MAX_TROTTER_NUM][MAX_QUBIT_NUM],
+                     int nTrot, int nSpin, std::string file_path);
 
 /* Generate Random Initial State */
-void GenerateRandomState(spin_t trotters[NUM_TROT][NUM_SPIN], int nTrot,
-                         int nSpin);
+void GenerateRandomState(qubit_t trotters[MAX_TROTTER_NUM][MAX_QUBIT_NUM],
+                         int nTrot, int nSpin);
 
 /* Generate Log Random Number = log(unif(rng)) * nTrot */
-void GenerateLogRandomNumber(int nTrot, fp_t log_rand_nums[NUM_TROT][NUM_SPIN]);
+void GenerateLogRandomNumber(
+    int nTrot, fp_t log_rand_nums[MAX_TROTTER_NUM][MAX_QUBIT_NUM]);
 
 /* Compute Energy Summation of A Trotter*/
-fp_t ComputeEnergyPerTrotter(int nSpin, spin_t trotter[NUM_SPIN],
-                             fp_t Jcoup[NUM_SPIN][NUM_SPIN], fp_t h[NUM_SPIN]);
+fp_t ComputeEnergyPerTrotter(int nSpin, qubit_t trotter[MAX_QUBIT_NUM],
+                             fp_t Jcoup[MAX_QUBIT_NUM][MAX_QUBIT_NUM],
+                             fp_t h[MAX_QUBIT_NUM]);
 
 /* Convert trotters into pack form*/
 void PackTrotters(
-    spin_pack_t trotters_pack[NUM_TROT][NUM_SPIN / PACKET_SIZE],
-    spin_t trotters[NUM_TROT][NUM_SPIN]);
+    qubitPack_t trotters_pack[MAX_TROTTER_NUM][MAX_QUBIT_NUM / PACKET_SIZE],
+    qubit_t     trotters[MAX_TROTTER_NUM][MAX_QUBIT_NUM]);
 
 /* Unpack trotters */
 void UnpackTrotters(
-    spin_pack_t trotters_pack[NUM_TROT][NUM_SPIN / PACKET_SIZE],
-    spin_t trotters[NUM_TROT][NUM_SPIN]);
+    qubitPack_t trotters_pack[MAX_TROTTER_NUM][MAX_QUBIT_NUM / PACKET_SIZE],
+    qubit_t     trotters[MAX_TROTTER_NUM][MAX_QUBIT_NUM]);
 
 /* Convert Jcoup into pack form */
-void PackJcoup(fp_pack_t Jcoup_pack[NUM_SPIN][NUM_SPIN / PACKET_SIZE],
-               fp_t Jcoup[NUM_SPIN][NUM_SPIN]);
+void PackJcoup(fpPack_t Jcoup_pack[MAX_QUBIT_NUM][MAX_QUBIT_NUM / PACKET_SIZE],
+               fp_t     Jcoup[MAX_QUBIT_NUM][MAX_QUBIT_NUM]);
 
 /* Generate Jcoup of Number Partition */
-void GenerateJcoupNP(int nSpin, fp_t Jcoup[NUM_SPIN][NUM_SPIN],
-                     fp_t rand_nums[NUM_SPIN]);
+void GenerateJcoupNP(int nSpin, fp_t Jcoup[MAX_QUBIT_NUM][MAX_QUBIT_NUM],
+                     fp_t rand_nums[MAX_QUBIT_NUM]);
 
 /* Read Jcoup of AM */
-void ReadJcoupAM(int nSpin, fp_t Jcoup[NUM_SPIN][NUM_SPIN],
+void ReadJcoupAM(int nSpin, fp_t Jcoup[MAX_QUBIT_NUM][MAX_QUBIT_NUM],
                  std::string J_file_path);
 
 /* Generate H of Number Partition */
-void GenerateHNP(int nSpin, fp_t h[NUM_SPIN]);
+void GenerateHNP(int nSpin, fp_t h[MAX_QUBIT_NUM]);
 
 /* Read H of AM */
-void ReadHAM(int nSpin, fp_t h[NUM_SPIN], std::string h_file_path);
-
-#endif
+void ReadHAM(int nSpin, fp_t h[MAX_QUBIT_NUM], std::string h_file_path);
