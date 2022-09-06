@@ -15,7 +15,7 @@ static fp_t negate(fp_t input)
 {
 #pragma HLS INLINE
     union {
-        float   fpData;
+        fp_t    fpData;
         uint8_t uintData[sizeof(fp_t)];
     } converter;
     converter.fpData = input;
@@ -70,11 +70,6 @@ void reduceIntraDim<NUM_COL_JCOUP_MEM_BANK, 1>(fp_t buf[NUM_COL_JCOUP_MEM_BANK])
 }
 #endif
 
-/*
- * Trotter Unit
- * - UpdateOfTrotters      : Sum up spin[j] * Jcoup[i][j]
- * - UpdateOfTrottersFinal : Add other terms and do the flip
- */
 static fp_t calcEnergy(const qubitPack_t qubitsCache[NUM_COL_QUBIT_CACHE],
                        const fpPack_t    jcoupCache[NUM_COL_JCOUP_MEM_BANK][JCOUP_BANK_NUM])
 {
@@ -193,8 +188,8 @@ SHIFT_DOWN_JCOUP_CACHE:
 }
 
 extern "C" {
-void RunSQAHardware(u32_t nTrotters, u32_t nQubits, u32_t nSteps, fp_t jperp,
-                    fp_t hCache[MAX_QUBIT_NUM], fp_t rndNumMem[MAX_TROTTER_NUM][NUM_COL_RNDNUM_MEM],
+void RunSQAHardware(u32_t nTrotters, u32_t nQubits, fp_t jperp, fp_t hCache[MAX_QUBIT_NUM],
+                    fp_t        rndNumMem[MAX_TROTTER_NUM][NUM_COL_RNDNUM_MEM],
                     fpPack_t    jcoupMemBank0[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
                     fpPack_t    jcoupMemBank1[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
                     qubitPack_t qubitsCache[MAX_TROTTER_NUM][NUM_COL_QUBIT_CACHE])
