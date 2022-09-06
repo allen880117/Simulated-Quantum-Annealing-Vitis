@@ -17,10 +17,12 @@
 #endif
 
 // Jcoup
-fp_t      Jcoup[NUM_SPIN][NUM_SPIN];
-fp_pack_t Jcoup_pack[NUM_SPIN][NUM_SPIN / PACKET_SIZE];
-fp_pack_t Jcoup_pack_0[NUM_SPIN][NUM_SPIN / PACKET_SIZE / NUM_STREAM];
-fp_pack_t Jcoup_pack_1[NUM_SPIN][NUM_SPIN / PACKET_SIZE / NUM_STREAM];
+fp_t     Jcoup[MAX_QUBIT_NUM][MAX_QUBIT_NUM];
+fpPack_t Jcoup_pack[MAX_QUBIT_NUM][MAX_QUBIT_NUM / PACKET_SIZE];
+fpPack_t Jcoup_pack_0[MAX_QUBIT_NUM]
+                     [MAX_QUBIT_NUM / PACKET_SIZE / JCOUP_BANK_NUM];
+fpPack_t Jcoup_pack_1[MAX_QUBIT_NUM]
+                     [MAX_QUBIT_NUM / PACKET_SIZE / JCOUP_BANK_NUM];
 
 int main(int argc, char **argv)
 {
@@ -29,25 +31,25 @@ int main(int argc, char **argv)
     std::cout << "-> U50    : " << U50 << std::endl;
     std::cout << "-> AM     : " << AM << std::endl;
     std::cout << "-> REPLAY : " << REPLAY << std::endl;
-    std::cout << "-> #SPIN  : " << NUM_SPIN << std::endl;
-    std::cout << "-> #TROT  : " << NUM_TROT << std::endl;
+    std::cout << "-> #SPIN  : " << MAX_QUBIT_NUM << std::endl;
+    std::cout << "-> #TROT  : " << MAX_TROTTER_NUM << std::endl;
 
 #if AM
     // Set nTrot and nSpin
-    int nTrot = NUM_TROT;
+    int nTrot = MAX_TROTTER_NUM;
     int nSpin = 18;
 #else
     // Set nTrot and nSpin
-    int nTrot = NUM_TROT;
-    int nSpin = NUM_SPIN;
+    int nTrot = MAX_TROTTER_NUM;
+    int nSpin = MAX_QUBIT_NUM;
 #endif
 
     // Trotters
-    spin_t      trotters[NUM_TROT][NUM_SPIN];
-    spin_pack_t trotters_pack[NUM_TROT][NUM_SPIN / PACKET_SIZE];
+    qubit_t     trotters[MAX_TROTTER_NUM][MAX_QUBIT_NUM];
+    qubitPack_t trotters_pack[MAX_TROTTER_NUM][MAX_QUBIT_NUM / PACKET_SIZE];
 
     // h
-    fp_t h[NUM_SPIN];
+    fp_t h[MAX_QUBIT_NUM];
 
 #if REPLAY
     // Read Trotters
@@ -63,7 +65,7 @@ int main(int argc, char **argv)
     ReadHAM(nSpin, h, "../../../h_r.txt");
 #else
     // Generate Jcoup, h
-    fp_t rand_nums[NUM_SPIN];
+    fp_t rand_nums[MAX_QUBIT_NUM];
     GenerateJcoupNP(nSpin, Jcoup, rand_nums);
     GenerateHNP(nSpin, h);
 #endif
@@ -73,10 +75,14 @@ int main(int argc, char **argv)
     PackTrotters(trotters_pack, trotters);
     PackJcoup(Jcoup_pack, Jcoup);
     // Dispatch
-    for (u32_t i = 0; i < NUM_SPIN; i++) {
-        for (u32_t pack_ofst = 0; pack_ofst < NUM_SPIN / PACKET_SIZE / NUM_STREAM; pack_ofst++) {
-            Jcoup_pack_0[i][pack_ofst] = Jcoup_pack[i][pack_ofst * NUM_STREAM + 0];
-            Jcoup_pack_1[i][pack_ofst] = Jcoup_pack[i][pack_ofst * NUM_STREAM + 1];
+    for (u32_t i = 0; i < MAX_QUBIT_NUM; i++) {
+        for (u32_t pack_ofst = 0;
+             pack_ofst < MAX_QUBIT_NUM / PACKET_SIZE / JCOUP_BANK_NUM;
+             pack_ofst++) {
+            Jcoup_pack_0[i][pack_ofst] =
+                Jcoup_pack[i][pack_ofst * JCOUP_BANK_NUM + 0];
+            Jcoup_pack_1[i][pack_ofst] =
+                Jcoup_pack[i][pack_ofst * JCOUP_BANK_NUM + 1];
         }
     }
 #endif
@@ -109,14 +115,15 @@ int main(int argc, char **argv)
     // Iteration of SQA
     for (int i = 0; i < iter; i++) {
         // Print progress
-        if ((i + 1) % 20 == 0) std::cout << (i + 1) << " iterations done..." << std::endl;
+        if ((i + 1) % 20 == 0)
+            std::cout << (i + 1) << " iterations done..." << std::endl;
 
-        // Get Jperp
+        // Get jperp
         fp_t gamma = gamma_start * (1.0f - ((fp_t)i / (fp_t)iter));
-        fp_t Jperp = -0.5 * T * log(tanh(gamma / (fp_t)nTrot / T));
+        fp_t jperp = -0.5 * T * log(tanh(gamma / (fp_t)nTrot / T));
 
         // Generate Log Rand Number = log(unif(rng)) * nTrot
-        fp_t log_rand_nums[NUM_TROT][NUM_SPIN];
+        fp_t log_rand_nums[MAX_TROTTER_NUM][MAX_QUBIT_NUM];
 #if REPLAY
         for (int t = 0; t < nTrot; t++) {
             for (int i = 0; i < nSpin; i++) { file_lrn >> log_rand_nums[t][i]; }
@@ -126,23 +133,28 @@ int main(int argc, char **argv)
 #endif
 
         // Set Timer
-        std::chrono::system_clock::time_point start = std::chrono::system_clock::now();
+        std::chrono::system_clock::time_point start =
+            std::chrono::system_clock::now();
 
 #if U50
         // Run QMC-U50
-        RunSQAHardware(trotters_pack, Jcoup_pack_0, Jcoup_pack_1, h, Jperp, 1.0f / T,
-                       log_rand_nums);
+        RunSQAHardware(trotters_pack, Jcoup_pack_0, Jcoup_pack_1, h, jperp,
+                       1.0f / T, log_rand_nums);
         // Unpack Trotters
         UnpackTrotters(trotters_pack, trotters);
 #else
         // Run QMC-Basic
-        RunSQASoftware(nTrot, nSpin, trotters, Jcoup, h, Jperp, 1.0f / T, log_rand_nums);
+        RunSQASoftware(nTrot, nSpin, trotters, Jcoup, h, jperp, 1.0f / T,
+                                    log_rand_nums);
 #endif
 
         // End Timer
-        std::chrono::system_clock::time_point end = std::chrono::system_clock::now();
+        std::chrono::system_clock::time_point end =
+            std::chrono::system_clock::now();
         time_log << "Run " << i << ": "
-                 << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count()
+                 << std::chrono::duration_cast<std::chrono::microseconds>(end -
+                                                                          start)
+                        .count()
                  << " us" << std::endl;
 
         // Current state energy

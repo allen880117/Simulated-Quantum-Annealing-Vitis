@@ -21,7 +21,7 @@
 [+][V] sqa-qmc.6.xclbin
     -> [*] Based on qmc_u50.5.backup.cpp
     -> [V] use less stream for better throughput and lut usage
-        -> Less NUM_STREAM make less control logic
+        -> Less JCOUP_BANK_NUM make less control logic
     -> [V] Better host-kernel I/O Latency
         -> Remove if-branch of READ_JCOUP which enable the "request" lapping with other works
         -> [:)] Schedule Viewer explains everything.

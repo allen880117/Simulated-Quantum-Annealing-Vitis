@@ -15,8 +15,8 @@ void PrintProgress(double percentage)
     if (val == 100) printf("\n");
 }
 
-void ReadRandomState(spin_t trotters[NUM_TROT][NUM_SPIN], int nTrot, int nSpin,
-                     std::string file_path)
+void ReadRandomState(qubit_t trotters[MAX_TROTTER_NUM][MAX_QUBIT_NUM],
+                     int nTrot, int nSpin, std::string file_path)
 {
     // Open file
     std::ifstream init_trot(file_path);
@@ -30,7 +30,8 @@ void ReadRandomState(spin_t trotters[NUM_TROT][NUM_SPIN], int nTrot, int nSpin,
     init_trot.close();
 }
 
-void GenerateRandomState(spin_t trotters[NUM_TROT][NUM_SPIN], int nTrot, int nSpin)
+void GenerateRandomState(qubit_t trotters[MAX_TROTTER_NUM][MAX_QUBIT_NUM],
+                         int nTrot, int nSpin)
 {
     /* Random Device & Random Number Generator */
     static std::random_device                 rd;
@@ -42,7 +43,8 @@ void GenerateRandomState(spin_t trotters[NUM_TROT][NUM_SPIN], int nTrot, int nSp
     }
 }
 
-void GenerateLogRandomNumber(int nTrot, fp_t log_rand_nums[NUM_TROT][NUM_SPIN])
+void GenerateLogRandomNumber(int  nTrot,
+                             fp_t log_rand_nums[MAX_TROTTER_NUM][MAX_QUBIT_NUM])
 {
     // Random Generator
     static std::random_device            rd;
@@ -50,15 +52,16 @@ void GenerateLogRandomNumber(int nTrot, fp_t log_rand_nums[NUM_TROT][NUM_SPIN])
     std::uniform_real_distribution<fp_t> unif(0.0, 1.0);
 
     // Generate Log Rand Number = log(unif(rng)) * nTrot
-    for (int t = 0; t < NUM_TROT; t++) {
-        for (int i = 0; i < NUM_SPIN; i++) {
+    for (int t = 0; t < MAX_TROTTER_NUM; t++) {
+        for (int i = 0; i < MAX_QUBIT_NUM; i++) {
             log_rand_nums[t][i] = log(unif(rng));  // * nTrot;
         }
     }
 }
 
-fp_t ComputeEnergyPerTrotter(int nSpin, spin_t trotter[NUM_SPIN], fp_t Jcoup[NUM_SPIN][NUM_SPIN],
-                             fp_t h[NUM_SPIN])
+fp_t ComputeEnergyPerTrotter(int nSpin, qubit_t trotter[MAX_QUBIT_NUM],
+                             fp_t Jcoup[MAX_QUBIT_NUM][MAX_QUBIT_NUM],
+                             fp_t h[MAX_QUBIT_NUM])
 {
     /* Follow the Formula */
 
@@ -85,11 +88,12 @@ fp_t ComputeEnergyPerTrotter(int nSpin, spin_t trotter[NUM_SPIN], fp_t Jcoup[NUM
     return (H);
 }
 
-void PackTrotters(spin_pack_t trotters_pack[NUM_TROT][NUM_SPIN / PACKET_SIZE],
-                  spin_t      trotters[NUM_TROT][NUM_SPIN])
+void PackTrotters(
+    qubitPack_t trotters_pack[MAX_TROTTER_NUM][MAX_QUBIT_NUM / PACKET_SIZE],
+    qubit_t     trotters[MAX_TROTTER_NUM][MAX_QUBIT_NUM])
 {
-    for (int t = 0; t < NUM_TROT; t++) {
-        for (int i = 0; i < NUM_SPIN / PACKET_SIZE; i++) {
+    for (int t = 0; t < MAX_TROTTER_NUM; t++) {
+        for (int i = 0; i < MAX_QUBIT_NUM / PACKET_SIZE; i++) {
             for (int k = 0; k < PACKET_SIZE; k++) {
                 trotters_pack[t][i][k] = trotters[t][i * PACKET_SIZE + k];
             }
@@ -97,11 +101,12 @@ void PackTrotters(spin_pack_t trotters_pack[NUM_TROT][NUM_SPIN / PACKET_SIZE],
     }
 }
 
-void UnpackTrotters(spin_pack_t trotters_pack[NUM_TROT][NUM_SPIN / PACKET_SIZE],
-                    spin_t      trotters[NUM_TROT][NUM_SPIN])
+void UnpackTrotters(
+    qubitPack_t trotters_pack[MAX_TROTTER_NUM][MAX_QUBIT_NUM / PACKET_SIZE],
+    qubit_t     trotters[MAX_TROTTER_NUM][MAX_QUBIT_NUM])
 {
-    for (int t = 0; t < NUM_TROT; t++) {
-        for (int i = 0; i < NUM_SPIN / PACKET_SIZE; i++) {
+    for (int t = 0; t < MAX_TROTTER_NUM; t++) {
+        for (int i = 0; i < MAX_QUBIT_NUM / PACKET_SIZE; i++) {
             for (int k = 0; k < PACKET_SIZE; k++) {
                 trotters[t][i * PACKET_SIZE + k] = trotters_pack[t][i][k];
             }
@@ -109,11 +114,11 @@ void UnpackTrotters(spin_pack_t trotters_pack[NUM_TROT][NUM_SPIN / PACKET_SIZE],
     }
 }
 
-void PackJcoup(fp_pack_t Jcoup_pack[NUM_SPIN][NUM_SPIN / PACKET_SIZE],
-               fp_t      Jcoup[NUM_SPIN][NUM_SPIN])
+void PackJcoup(fpPack_t Jcoup_pack[MAX_QUBIT_NUM][MAX_QUBIT_NUM / PACKET_SIZE],
+               fp_t     Jcoup[MAX_QUBIT_NUM][MAX_QUBIT_NUM])
 {
-    for (int i = 0; i < NUM_SPIN; i++) {
-        for (int j = 0; j < NUM_SPIN / PACKET_SIZE; j++) {
+    for (int i = 0; i < MAX_QUBIT_NUM; i++) {
+        for (int j = 0; j < MAX_QUBIT_NUM / PACKET_SIZE; j++) {
             for (int k = 0; k < PACKET_SIZE; k++) {
                 Jcoup_pack[i][j].data[k] = Jcoup[i][j * PACKET_SIZE + k];
             }
@@ -121,16 +126,22 @@ void PackJcoup(fp_pack_t Jcoup_pack[NUM_SPIN][NUM_SPIN / PACKET_SIZE],
     }
 }
 
-void GenerateJcoupNP(int nSpin, fp_t Jcoup[NUM_SPIN][NUM_SPIN], fp_t rand_nums[NUM_SPIN])
+void GenerateJcoupNP(int nSpin, fp_t Jcoup[MAX_QUBIT_NUM][MAX_QUBIT_NUM],
+                     fp_t rand_nums[MAX_QUBIT_NUM])
 {
-    for (int i = 0; i < nSpin; i++) { rand_nums[i] = (float)(i + 1) / (float)nSpin; }
+    for (int i = 0; i < nSpin; i++) {
+        rand_nums[i] = (float)(i + 1) / (float)nSpin;
+    }
 
     for (int i = 0; i < nSpin; i++) {
-        for (int j = 0; j < nSpin; j++) { Jcoup[i][j] = rand_nums[i] * rand_nums[j]; }
+        for (int j = 0; j < nSpin; j++) {
+            Jcoup[i][j] = rand_nums[i] * rand_nums[j];
+        }
     }
 }
 
-void ReadJcoupAM(int nSpin, fp_t Jcoup[NUM_SPIN][NUM_SPIN], std::string J_file_path)
+void ReadJcoupAM(int nSpin, fp_t Jcoup[MAX_QUBIT_NUM][MAX_QUBIT_NUM],
+                 std::string J_file_path)
 {
     std::ifstream J_r(J_file_path);
     for (int i = 0; i < nSpin; i++) {
@@ -138,12 +149,12 @@ void ReadJcoupAM(int nSpin, fp_t Jcoup[NUM_SPIN][NUM_SPIN], std::string J_file_p
     }
 }
 
-void GenerateHNP(int nSpin, fp_t h[NUM_SPIN])
+void GenerateHNP(int nSpin, fp_t h[MAX_QUBIT_NUM])
 {
     for (int i = 0; i < nSpin; i++) { h[i] = 0.0f; }
 }
 
-void ReadHAM(int nSpin, fp_t h[NUM_SPIN], std::string h_file_path)
+void ReadHAM(int nSpin, fp_t h[MAX_QUBIT_NUM], std::string h_file_path)
 {
     std::ifstream h_r(h_file_path);
     for (int i = 0; i < nSpin; i++) { h_r >> h[i]; }
