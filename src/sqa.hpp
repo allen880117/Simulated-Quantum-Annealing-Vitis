@@ -9,6 +9,7 @@
 #if __SYNTHESIS__
     #define MAX_TROTTER_NUM     4
     #define MAX_QUBIT_NUM       4096
+    #define MAX_STEP_NUM        1024
     #define PACKET_SIZE         64
     #define LOG2_PACKET_SIZE    6
     #define JCOUP_BANK_NUM      2
@@ -17,6 +18,7 @@
 #else
     #define MAX_TROTTER_NUM     4
     #define MAX_QUBIT_NUM       32
+    #define MAX_STEP_NUM        1024
     #define PACKET_SIZE         16
     #define LOG2_PACKET_SIZE    4
     #define JCOUP_BANK_NUM      2
@@ -37,7 +39,8 @@ typedef struct {
 typedef ap_uint<PACKET_SIZE> qubitPack_t;
 
 /* Column number of each cache or memory bank */
-#define NUM_COL_QUBIT_CACHE    (MAX_QUBIT_NUM / PACKET_SIZE)
+#define NUM_COL_QUBIT_MEM      (MAX_QUBIT_NUM / PACKET_SIZE)
+#define NUM_COL_QUBIT_CACHE    (NUM_COL_QUBIT_MEM)
 #define NUM_COL_JCOUP_MEM_BANK (MAX_QUBIT_NUM / PACKET_SIZE / JCOUP_BANK_NUM)
 #define NUM_COL_RNDNUM_MEM     (MAX_QUBIT_NUM)
 
@@ -48,6 +51,11 @@ void RunSQAHardware(u32_t nTrotters, u32_t nQubits, fp_t jperp, fp_t hCache[MAX_
                     fpPack_t    jcoupMemBank0[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
                     fpPack_t    jcoupMemBank1[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
                     qubitPack_t qubitsCache[MAX_TROTTER_NUM][NUM_COL_QUBIT_CACHE]);
+void RunSQAKernel(u32_t nTrotters, u32_t nQubits, u32_t nSteps, fp_t beta, i32_t initRndNumSeed,
+                  fpPack_t jcoupMemBank0[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
+                  fpPack_t jcoupMemBank1[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
+                  fp_t hMem[MAX_QUBIT_NUM], fp_t jperpMem[MAX_STEP_NUM],
+                  qubitPack_t qubitsMem[MAX_TROTTER_NUM][NUM_COL_QUBIT_MEM]);
 }
 
 void RunSQASoftware(u32_t nTrotters, u32_t nQubits, qubit_t qubits[MAX_TROTTER_NUM][MAX_QUBIT_NUM],
