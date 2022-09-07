@@ -10,8 +10,8 @@
 #ifndef U50
     #define U50 1
 #endif
-#ifndef WRAP_MODE
-    #define WROP_MODE 0
+#ifndef WARP_MODE
+    #define WARP_MODE 0
 #endif
 
 fp_t     Jcoup[MAX_QUBIT_NUM][MAX_QUBIT_NUM];
@@ -19,19 +19,27 @@ fpPack_t JcoupPack[MAX_QUBIT_NUM][MAX_QUBIT_NUM / PACKET_SIZE];
 fpPack_t JcoupPackBank0[MAX_QUBIT_NUM][MAX_QUBIT_NUM / PACKET_SIZE / JCOUP_BANK_NUM];
 fpPack_t JcoupPackBank1[MAX_QUBIT_NUM][MAX_QUBIT_NUM / PACKET_SIZE / JCOUP_BANK_NUM];
 
+u32_t       nTrotters = MAX_TROTTER_NUM;
+u32_t       nQubits   = MAX_QUBIT_NUM;
+qubit_t     qubits[MAX_TROTTER_NUM][MAX_QUBIT_NUM];
+qubitPack_t qubitsPack[MAX_TROTTER_NUM][MAX_QUBIT_NUM / PACKET_SIZE];
+fp_t        h[MAX_QUBIT_NUM];
+fp_t        prbNumbers[MAX_QUBIT_NUM];
+
+const int  nSteps     = 500;     // default 500
+const fp_t gammaStart = 3.0f;    // default 3.0f
+const fp_t T          = 128.0f;  // default 0.3f
+
+static void unwarp_execution(std::ofstream &energyLog);
+static void warp_execution(std::ofstream &energyLog);
+
 int main(int argc, char **argv)
 {
     std::cout << "Current host settings:" << std::endl;
     std::cout << "* U50       : " << U50 << std::endl;
+    std::cout << "* WARP_MODE : " << WARP_MODE << std::endl;
     std::cout << "* #SPIN     : " << MAX_QUBIT_NUM << std::endl;
     std::cout << "* #TROTTER  : " << MAX_TROTTER_NUM << std::endl;
-
-    u32_t       nTrotters = MAX_TROTTER_NUM;
-    u32_t       nQubits   = MAX_QUBIT_NUM;
-    qubit_t     qubits[MAX_TROTTER_NUM][MAX_QUBIT_NUM];
-    qubitPack_t qubitsPack[MAX_TROTTER_NUM][MAX_QUBIT_NUM / PACKET_SIZE];
-    fp_t        h[MAX_QUBIT_NUM];
-    fp_t        prbNumbers[MAX_QUBIT_NUM];
 
     GenerateJcoupNP(nQubits, Jcoup, prbNumbers);
     GenerateHNP(nQubits, h);
@@ -46,10 +54,14 @@ int main(int argc, char **argv)
     std::string   label = (U50) ? std::string("u50") : std::string("naive");
     std::ofstream energyLog(std::string("energy.") + label + std::string(".txt"));
 
-    const int  nSteps     = 500;     // default 500
-    const fp_t gammaStart = 3.0f;    // default 3.0f
-    const fp_t T          = 128.0f;  // default 0.3f
+#if WARP_MODE
+#else
+    unwarp_execution(energyLog);
+#endif
+}
 
+static void unwarp_execution(std::ofstream &energyLog)
+{
     fp_t minEnergy = -1.0f;
 
     for (u32_t i = 0; i < nSteps; i++) {

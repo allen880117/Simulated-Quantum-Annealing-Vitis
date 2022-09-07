@@ -100,9 +100,41 @@ static void fillRndNumMem(fp_t  rndNumMem[MAX_TROTTER_NUM][NUM_COL_RNDNUM_MEM],
     }
 }
 
+qubit_t qubitsLogSW[MAX_STEP_NUM][MAX_TROTTER_NUM][MAX_QUBIT_NUM];
+
 void RunSQASoftware(u32_t nTrotters, u32_t nQubits, u32_t nSteps, fp_t beta, i32_t initRndNumSeed,
                     fp_t jcoup[MAX_QUBIT_NUM][MAX_QUBIT_NUM], fp_t hMem[MAX_QUBIT_NUM],
                     fp_t jperpMem[MAX_STEP_NUM], qubit_t qubits[MAX_TROTTER_NUM][MAX_QUBIT_NUM])
 {
-    ;
+    /* Caches and Static Memory */
+    fp_t  rndNumMem0[MAX_TROTTER_NUM][NUM_COL_RNDNUM_MEM];
+    fp_t  rndNumMem1[MAX_TROTTER_NUM][NUM_COL_RNDNUM_MEM];
+    i32_t seed[MAX_TROTTER_NUM];
+
+    /* Init seed */
+    for (u32_t trotIdx = 0; trotIdx < MAX_TROTTER_NUM; trotIdx++)
+#pragma HLS UNROLL
+        seed[trotIdx] = initRndNumSeed + trotIdx;
+
+    /* Prefill Random Number Memory */
+    fillRndNumMem(rndNumMem0, seed, beta);
+
+    /* Main loop */
+    for (u32_t step = 0; step < MAX_STEP_NUM; step++) {
+#pragma HLS PIPELINE off
+        if (step < nSteps) {
+            fp_t jperp = jperpMem[step];
+            if (step & (0x01)) {
+                RunSQASoftwareOneStep(nTrotters, nQubits, jperp, hMem, rndNumMem1, jcoup, qubits);
+                fillRndNumMem(rndNumMem0, seed, beta);
+            } else {
+                RunSQASoftwareOneStep(nTrotters, nQubits, jperp, hMem, rndNumMem0, jcoup, qubits);
+                fillRndNumMem(rndNumMem1, seed, beta);
+            }
+
+            for (u32_t trotIdx = 0; trotIdx < MAX_TROTTER_NUM; trotIdx++)
+                for (u32_t colIdx = 0; colIdx < MAX_QUBIT_NUM; colIdx++)
+                    qubitsLogSW[step][trotIdx][colIdx] = qubits[trotIdx][colIdx];
+        }
+    }
 }
