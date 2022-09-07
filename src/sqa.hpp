@@ -46,18 +46,22 @@ typedef ap_uint<PACKET_SIZE> qubitPack_t;
 
 /* Prototype of Functions */
 extern "C" {
-void RunSQAHardware(u32_t nTrotters, u32_t nQubits, fp_t jperp, fp_t hCache[MAX_QUBIT_NUM],
-                    fp_t        rndNumMem[MAX_TROTTER_NUM][NUM_COL_RNDNUM_MEM],
-                    fpPack_t    jcoupMemBank0[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
-                    fpPack_t    jcoupMemBank1[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
-                    qubitPack_t qubitsCache[MAX_TROTTER_NUM][NUM_COL_QUBIT_CACHE]);
-void RunSQAKernel(u32_t nTrotters, u32_t nQubits, u32_t nSteps, fp_t beta, i32_t initRndNumSeed,
-                  fpPack_t jcoupMemBank0[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
-                  fpPack_t jcoupMemBank1[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
-                  fp_t hMem[MAX_QUBIT_NUM], fp_t jperpMem[MAX_STEP_NUM],
-                  qubitPack_t qubitsMem[MAX_TROTTER_NUM][NUM_COL_QUBIT_MEM]);
+void RunSQAHardwareOneStep(u32_t nTrotters, u32_t nQubits, fp_t jperp, fp_t hCache[MAX_QUBIT_NUM],
+                           fp_t        rndNumMem[MAX_TROTTER_NUM][NUM_COL_RNDNUM_MEM],
+                           fpPack_t    jcoupMemBank0[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
+                           fpPack_t    jcoupMemBank1[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
+                           qubitPack_t qubitsCache[MAX_TROTTER_NUM][NUM_COL_QUBIT_CACHE]);
+void RunSQAHardware(u32_t nTrotters, u32_t nQubits, u32_t nSteps, fp_t beta, i32_t initRndNumSeed,
+                    fpPack_t jcoupMemBank0[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
+                    fpPack_t jcoupMemBank1[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
+                    fp_t hMem[MAX_QUBIT_NUM], fp_t jperpMem[MAX_STEP_NUM],
+                    qubitPack_t qubitsMem[MAX_TROTTER_NUM][NUM_COL_QUBIT_MEM]);
 }
 
-void RunSQASoftware(u32_t nTrotters, u32_t nQubits, qubit_t qubits[MAX_TROTTER_NUM][MAX_QUBIT_NUM],
-                    fp_t jcoup[MAX_QUBIT_NUM][MAX_QUBIT_NUM], fp_t h[MAX_QUBIT_NUM], fp_t jperp,
-                    fp_t beta, fp_t logRndNum[MAX_TROTTER_NUM][MAX_QUBIT_NUM]);
+void RunSQASoftwareOneStep(u32_t nTrotters, u32_t nQubits, fp_t jperp, fp_t h[MAX_QUBIT_NUM],
+                           fp_t    rndNum[MAX_TROTTER_NUM][MAX_QUBIT_NUM],
+                           fp_t    jcoup[MAX_QUBIT_NUM][MAX_QUBIT_NUM],
+                           qubit_t qubits[MAX_TROTTER_NUM][MAX_QUBIT_NUM]);
+void RunSQASoftware(u32_t nTrotters, u32_t nQubits, u32_t nSteps, fp_t beta, i32_t initRndNumSeed,
+                    fp_t jcoup[MAX_QUBIT_NUM][MAX_QUBIT_NUM], fp_t hMem[MAX_QUBIT_NUM],
+                    fp_t jperpMem[MAX_STEP_NUM], qubit_t qubits[MAX_TROTTER_NUM][MAX_QUBIT_NUM]);

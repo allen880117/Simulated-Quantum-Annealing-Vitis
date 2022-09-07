@@ -188,11 +188,11 @@ SHIFT_DOWN_JCOUP_CACHE:
 }
 
 extern "C" {
-void RunSQAHardware(u32_t nTrotters, u32_t nQubits, fp_t jperp, fp_t hCache[MAX_QUBIT_NUM],
-                    fp_t        rndNumMem[MAX_TROTTER_NUM][NUM_COL_RNDNUM_MEM],
-                    fpPack_t    jcoupMemBank0[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
-                    fpPack_t    jcoupMemBank1[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
-                    qubitPack_t qubitsCache[MAX_TROTTER_NUM][NUM_COL_QUBIT_CACHE])
+void RunSQAHardwareOneStep(u32_t nTrotters, u32_t nQubits, fp_t jperp, fp_t hCache[MAX_QUBIT_NUM],
+                           fp_t        rndNumMem[MAX_TROTTER_NUM][NUM_COL_RNDNUM_MEM],
+                           fpPack_t    jcoupMemBank0[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
+                           fpPack_t    jcoupMemBank1[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
+                           qubitPack_t qubitsCache[MAX_TROTTER_NUM][NUM_COL_QUBIT_CACHE])
 {
 #pragma HLS INLINE off
     // Pragma: Aggreate for better throughput
@@ -282,11 +282,11 @@ qubitPack_t qubitsMemLogHW[MAX_STEP_NUM][MAX_TROTTER_NUM][NUM_COL_QUBIT_CACHE];
 #endif
 
 extern "C" {
-void RunSQAKernel(u32_t nTrotters, u32_t nQubits, u32_t nSteps, fp_t beta, i32_t initRndNumSeed,
-                  fpPack_t jcoupMemBank0[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
-                  fpPack_t jcoupMemBank1[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
-                  fp_t hMem[MAX_QUBIT_NUM], fp_t jperpMem[MAX_STEP_NUM],
-                  qubitPack_t qubitsMem[MAX_TROTTER_NUM][NUM_COL_QUBIT_CACHE])
+void RunSQAHardware(u32_t nTrotters, u32_t nQubits, u32_t nSteps, fp_t beta, i32_t initRndNumSeed,
+                    fpPack_t jcoupMemBank0[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
+                    fpPack_t jcoupMemBank1[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
+                    fp_t hMem[MAX_QUBIT_NUM], fp_t jperpMem[MAX_STEP_NUM],
+                    qubitPack_t qubitsMem[MAX_TROTTER_NUM][NUM_COL_QUBIT_CACHE])
 {
 #pragma HLS AGGREGATE compact = auto variable = jcoupMemBank0
 #pragma HLS AGGREGATE compact = auto variable = jcoupMemBank1
@@ -329,12 +329,12 @@ void RunSQAKernel(u32_t nTrotters, u32_t nQubits, u32_t nSteps, fp_t beta, i32_t
         if (step < nSteps) {
             fp_t jperp = jperpMem[step];
             if (step & (0x01)) {
-                RunSQAHardware(nTrotters, nQubits, jperp, hCache, rndNumMem1, jcoupMemBank0,
-                               jcoupMemBank1, qubitsCache);
+                RunSQAHardwareOneStep(nTrotters, nQubits, jperp, hCache, rndNumMem1, jcoupMemBank0,
+                                      jcoupMemBank1, qubitsCache);
                 fillRndNumMem(rndNumMem0, seed, beta);
             } else {
-                RunSQAHardware(nTrotters, nQubits, jperp, hCache, rndNumMem0, jcoupMemBank0,
-                               jcoupMemBank1, qubitsCache);
+                RunSQAHardwareOneStep(nTrotters, nQubits, jperp, hCache, rndNumMem0, jcoupMemBank0,
+                                      jcoupMemBank1, qubitsCache);
                 fillRndNumMem(rndNumMem1, seed, beta);
             }
 #ifndef __SYNTHESIS__
