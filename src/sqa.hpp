@@ -5,6 +5,16 @@
 #define PRAGMA_SUB(PRAG) _Pragma(#PRAG)
 #define CTX_PRAGMA(PRAG) PRAGMA_SUB(PRAG)
 
+#if __SYNTHESIS__
+    #define USING_STD_RNG 0
+#else
+    #define USING_STD_RNG 0
+#endif
+
+#if USING_STD_RNG
+    #include <random>
+#endif
+
 /* Common parameters */
 #if __SYNTHESIS__
     #define MAX_TROTTER_NUM     4
@@ -43,6 +53,11 @@ typedef ap_uint<PACKET_SIZE> qubitPack_t;
 #define NUM_COL_QUBIT_CACHE    (NUM_COL_QUBIT_MEM)
 #define NUM_COL_JCOUP_MEM_BANK (MAX_QUBIT_NUM / PACKET_SIZE / JCOUP_BANK_NUM)
 #define NUM_COL_RNDNUM_MEM     (MAX_QUBIT_NUM)
+
+#ifndef __SYNTHESIS__
+extern qubitPack_t qubitsMemLogHW[MAX_STEP_NUM][MAX_TROTTER_NUM][NUM_COL_QUBIT_CACHE];
+extern qubit_t     qubitsLogSW[MAX_STEP_NUM][MAX_TROTTER_NUM][MAX_QUBIT_NUM];
+#endif
 
 /* Prototype of Functions */
 extern "C" {

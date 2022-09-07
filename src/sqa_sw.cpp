@@ -89,13 +89,23 @@ static fp_t genRndNum(i32_t &seed)
 }
 
 static void fillRndNumMem(fp_t  rndNumMem[MAX_TROTTER_NUM][NUM_COL_RNDNUM_MEM],
-                          i32_t seed[MAX_TROTTER_NUM], u32_t beta)
+                          i32_t seed[MAX_TROTTER_NUM], fp_t beta)
 {
+#if USING_STD_RNG
+    static std::mt19937                  rng(12347);
+    std::uniform_real_distribution<fp_t> unif(0.0, 1.0);
+#endif
+
 #pragma HLS INLINE off
     for (u32_t trotIdx = 0; trotIdx < MAX_TROTTER_NUM; trotIdx++) {
 #pragma HLS UNROLL
         for (u32_t colIdx = 0; colIdx < NUM_COL_RNDNUM_MEM; colIdx++) {
+#if USING_STD_RNG
+            fp_t tmp                   = unif(rng);
+            rndNumMem[trotIdx][colIdx] = log(unif(rng)) / beta / 2.0f;
+#else
             rndNumMem[trotIdx][colIdx] = log(genRndNum(seed[trotIdx])) / beta / 2.0f;
+#endif
         }
     }
 }
