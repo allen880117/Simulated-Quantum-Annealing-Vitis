@@ -194,10 +194,11 @@ void RunSQAHardware(u32_t nTrotters, u32_t nQubits, fp_t jperp, fp_t hCache[MAX_
                     fpPack_t    jcoupMemBank1[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
                     qubitPack_t qubitsCache[MAX_TROTTER_NUM][NUM_COL_QUBIT_CACHE])
 {
+#pragma HLS INLINE off
     // Pragma: Aggreate for better throughput
-#pragma HLS AGGREGATE compact = auto variable = jcoupMemBank0
-#pragma HLS AGGREGATE compact = auto variable = jcoupMemBank1
-#pragma HLS AGGREGATE compact = auto variable = qubitsCache
+    // #pragma HLS AGGREGATE compact = auto variable = jcoupMemBank0
+    // #pragma HLS AGGREGATE compact = auto variable = jcoupMemBank1
+    // #pragma HLS AGGREGATE compact = auto variable = qubitsCache
 
     // Pragma: Partition
 #pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = rndNumMem
@@ -207,8 +208,10 @@ void RunSQAHardware(u32_t nTrotters, u32_t nQubits, fp_t jperp, fp_t hCache[MAX_
     fpPack_t jcoupCache[MAX_TROTTER_NUM][NUM_COL_JCOUP_MEM_BANK][JCOUP_BANK_NUM];
     fpPack_t jcoupPrefetch[NUM_COL_JCOUP_MEM_BANK][JCOUP_BANK_NUM];
     fp_t     rndNumPrefetch[MAX_TROTTER_NUM];
-#pragma HLS AGGREGATE compact = auto variable = jcoupCache
-#pragma HLS AGGREGATE compact = auto variable = jcoupPrefetch
+// Disable these 2 pragmas, when this function is not top
+// Don't know why these pragmas affect the memory partition and aggregation
+// #pragma HLS AGGREGATE compact = auto variable = jcoupCache
+// #pragma HLS AGGREGATE compact = auto variable = jcoupPrefetch
 #pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = jcoupCache
 #pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = rndNumPrefetch
 
@@ -246,5 +249,106 @@ LOOP_STAGE:
             updateQubit(stage, info[trotIdx], state[trotIdx], e, qubitsCache[trotIdx]);
         }
     }
+}
+}
+
+static fp_t genRndNum(i32_t &seed)
+{
+#pragma HLS INLINE
+    const int i4_huge = 2147483647;
+    int       k;
+    float     r;
+    k    = seed / 127773;
+    seed = 16807 * (seed - k * 127773) - k * 2836;
+    if (seed < 0) { seed = seed + i4_huge; }
+    r = (float)(seed)*4.656612875E-10;
+    return r;
+}
+
+static void fillRndNumMem(fp_t  rndNumMem[MAX_TROTTER_NUM][NUM_COL_RNDNUM_MEM],
+                          i32_t seed[MAX_TROTTER_NUM], u32_t beta)
+{
+#pragma HLS INLINE off
+    for (u32_t trotIdx = 0; trotIdx < MAX_TROTTER_NUM; trotIdx++) {
+#pragma HLS UNROLL
+        for (u32_t colIdx = 0; colIdx < NUM_COL_RNDNUM_MEM; colIdx++) {
+            rndNumMem[trotIdx][colIdx] = log(genRndNum(seed[trotIdx])) / beta / 2.0f;
+        }
+    }
+}
+
+#ifndef __SYNTHESIS__
+qubitPack_t qubitsMemLogHW[MAX_STEP_NUM][MAX_TROTTER_NUM][NUM_COL_QUBIT_CACHE];
+#endif
+
+extern "C" {
+void RunSQAKernel(u32_t nTrotters, u32_t nQubits, u32_t nSteps, fp_t beta, i32_t initRndNumSeed,
+                  fpPack_t jcoupMemBank0[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
+                  fpPack_t jcoupMemBank1[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
+                  fp_t hMem[MAX_QUBIT_NUM], fp_t jperpMem[MAX_STEP_NUM],
+                  qubitPack_t qubitsMem[MAX_TROTTER_NUM][NUM_COL_QUBIT_CACHE])
+{
+#pragma HLS AGGREGATE compact = auto variable = jcoupMemBank0
+#pragma HLS AGGREGATE compact = auto variable = jcoupMemBank1
+#pragma HLS AGGREGATE compact = auto variable = qubitsMem
+
+    /* Caches and Static Memory */
+    qubitPack_t qubitsCache[MAX_TROTTER_NUM][NUM_COL_QUBIT_CACHE];
+    fp_t        hCache[MAX_QUBIT_NUM];
+    fp_t        rndNumMem0[MAX_TROTTER_NUM][NUM_COL_RNDNUM_MEM];
+    fp_t        rndNumMem1[MAX_TROTTER_NUM][NUM_COL_RNDNUM_MEM];
+    i32_t       seed[MAX_TROTTER_NUM];
+#pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = qubitsCache
+#pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = rndNumMem0
+#pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = rndNumMem1
+#pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = seed
+#pragma HLS AGGREGATE compact = auto variable = qubitsCache
+
+    /* Cache qubits */
+    for (u32_t trotIdx = 0; trotIdx < MAX_TROTTER_NUM; trotIdx++)
+        for (u32_t colIdx = 0; colIdx < NUM_COL_QUBIT_CACHE; colIdx++)
+#pragma HLS PIPELINE
+            qubitsCache[trotIdx][colIdx] = qubitsMem[trotIdx][colIdx];
+
+    /* Cache h */
+    for (u32_t colIdx = 0; colIdx < MAX_QUBIT_NUM; colIdx++)
+#pragma HLS PIPELINE
+        hCache[colIdx] = hMem[colIdx];
+
+    /* Init seed */
+    for (u32_t trotIdx = 0; trotIdx < MAX_TROTTER_NUM; trotIdx++)
+#pragma HLS UNROLL
+        seed[trotIdx] = initRndNumSeed + trotIdx;
+
+    /* Prefill Random Number Memory */
+    fillRndNumMem(rndNumMem0, seed, beta);
+
+    /* Main loop */
+    for (u32_t step = 0; step < MAX_STEP_NUM; step++) {
+#pragma HLS PIPELINE off
+        if (step < nSteps) {
+            fp_t jperp = jperpMem[step];
+            if (step & (0x01)) {
+                RunSQAHardware(nTrotters, nQubits, jperp, hCache, rndNumMem1, jcoupMemBank0,
+                               jcoupMemBank1, qubitsCache);
+                fillRndNumMem(rndNumMem0, seed, beta);
+            } else {
+                RunSQAHardware(nTrotters, nQubits, jperp, hCache, rndNumMem0, jcoupMemBank0,
+                               jcoupMemBank1, qubitsCache);
+                fillRndNumMem(rndNumMem1, seed, beta);
+            }
+#ifndef __SYNTHESIS__
+            for (u32_t trotIdx = 0; trotIdx < MAX_TROTTER_NUM; trotIdx++)
+                for (u32_t colIdx = 0; colIdx < NUM_COL_QUBIT_CACHE; colIdx++)
+                    qubitsMemLogHW[step][trotIdx][colIdx] = qubitsCache[trotIdx][colIdx];
+#endif
+        }
+    }
+
+    /* Writeback Cache */
+    for (u32_t trotIdx = 0; trotIdx < MAX_TROTTER_NUM; trotIdx++)
+        for (u32_t colIdx = 0; colIdx < NUM_COL_QUBIT_CACHE; colIdx++)
+#pragma HLS PIPELINE
+            qubitsMem[trotIdx][colIdx] = qubitsCache[trotIdx][colIdx];
 }
 }
