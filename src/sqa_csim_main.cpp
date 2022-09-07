@@ -11,7 +11,7 @@
     #define U50 1
 #endif
 #ifndef WARP_MODE
-    #define WARP_MODE 0
+    #define WARP_MODE 1
 #endif
 
 fp_t     Jcoup[MAX_QUBIT_NUM][MAX_QUBIT_NUM];
@@ -30,8 +30,8 @@ const int  nSteps     = 500;     // default 500
 const fp_t gammaStart = 3.0f;    // default 3.0f
 const fp_t T          = 128.0f;  // default 0.3f
 
-static void unwarp_execution(std::ofstream &energyLog);
 static void warp_execution(std::ofstream &energyLog);
+static void unwarp_execution(std::ofstream &energyLog);
 
 int main(int argc, char **argv)
 {
@@ -55,9 +55,47 @@ int main(int argc, char **argv)
     std::ofstream energyLog(std::string("energy.") + label + std::string(".txt"));
 
 #if WARP_MODE
+    warp_execution(energyLog);
 #else
     unwarp_execution(energyLog);
 #endif
+}
+
+static void warp_execution(std::ofstream &energyLog)
+{
+    fp_t minEnergy = -1.0f;
+    fp_t jperpMem[MAX_STEP_NUM];
+
+    for (u32_t i = 0; i < nSteps; i++) {
+        fp_t gamma  = gammaStart * (1.0f - ((fp_t)i / (fp_t)nSteps));
+        fp_t jperp  = -0.5 * T * log(tanh(gamma / (fp_t)nTrotters / T));
+        jperpMem[i] = jperp;
+    }
+
+#if U50
+    RunSQAHardware(nTrotters, nQubits, nSteps, 1.0f / T, 0, JcoupPackBank0, JcoupPackBank1, h,
+                   jperpMem, qubitsPack);
+#else
+    RunSQASoftware(nTrotters, nQubits, nSteps, 1.0f / T, 0, Jcoup, h, jperpMem, qubits);
+#endif
+
+    for (u32_t i = 0; i < nSteps; i++) {
+#if U50
+        UnpackQubits(qubitsMemLogHW[i], qubits);
+#endif
+        for (u32_t t = 0; t < nTrotters; t++) {
+#if U50
+            fp_t energy = ComputeEnergyPerTrotter(nQubits, qubits[t], Jcoup, h);
+#else
+            fp_t energy = ComputeEnergyPerTrotter(nQubits, qubitsLogSW[i][t], Jcoup, h);
+#endif
+            energyLog << "T" << t << ": " << energy << std::endl;
+            if (minEnergy < 0 || minEnergy > abs(energy)) minEnergy = abs(energy);
+        }
+        energyLog << "Energy: " << minEnergy << std::endl;
+    }
+
+    energyLog.close();
 }
 
 static void unwarp_execution(std::ofstream &energyLog)
