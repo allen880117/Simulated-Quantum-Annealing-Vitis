@@ -277,6 +277,7 @@ static void fillRndNumMem(fp_t  rndNumMem[MAX_TROTTER_NUM][NUM_COL_RNDNUM_MEM],
     for (u32_t trotIdx = 0; trotIdx < MAX_TROTTER_NUM; trotIdx++) {
 #pragma HLS UNROLL
         for (u32_t colIdx = 0; colIdx < NUM_COL_RNDNUM_MEM; colIdx++) {
+#pragma HLS UNROLL factor = 4
 #if USING_STD_RNG
             fp_t tmp                   = unif(rng);
             rndNumMem[trotIdx][colIdx] = log(tmp) / beta / 2.0f;
