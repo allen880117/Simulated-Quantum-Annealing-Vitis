@@ -349,6 +349,7 @@ void RunSQAHardware(u32_t nTrotters, u32_t nQubits, u32_t nSteps, fp_t beta, i32
                 fillRndNumMem(rndNumMem1, seed, beta);
             }
 #ifndef __SYNTHESIS__
+            if ((step + 1) % 20 == 0) std::cout << (step + 1) << " iterations done..." << std::endl;
             for (u32_t trotIdx = 0; trotIdx < MAX_TROTTER_NUM; trotIdx++)
                 for (u32_t colIdx = 0; colIdx < NUM_COL_QUBIT_CACHE; colIdx++)
                     qubitsMemLogHW[step][trotIdx][colIdx] = qubitsCache[trotIdx][colIdx];
