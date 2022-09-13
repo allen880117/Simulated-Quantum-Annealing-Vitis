@@ -1,6 +1,5 @@
 #pragma once
-#include "hls_math.h"
-#include "hls_stream.h"
+#include "hlslib/xilinx/DataPack.h"
 
 #define PRAGMA_SUB(PRAG) _Pragma(#PRAG)
 #define CTX_PRAGMA(PRAG) PRAGMA_SUB(PRAG)
@@ -19,7 +18,7 @@
 
 /* Common parameters */
 #if __SYNTHESIS__
-    #define MAX_TROTTER_NUM		8
+    #define MAX_TROTTER_NUM		16
     #define MAX_QUBIT_NUM       4096
     #define MAX_STEP_NUM        1024
     #define PACKET_SIZE         64
@@ -45,9 +44,7 @@ typedef float        fp_t;
 typedef ap_uint<1>   qubit_t;
 
 /* Aggreate Type */
-typedef struct {
-    fp_t data[PACKET_SIZE];
-} fpPack_t;
+typedef hlslib::DataPack<fp_t, PACKET_SIZE> fpPack_t;
 typedef ap_uint<PACKET_SIZE> qubitPack_t;
 
 /* Column number of each cache or memory bank */

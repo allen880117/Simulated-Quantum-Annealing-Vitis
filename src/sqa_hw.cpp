@@ -1,3 +1,6 @@
+#include "hls_math.h"
+#include "hlslib/xilinx/Operators.h"
+#include "hlslib/xilinx/TreeReduce.h"
 #include "sqa.hpp"
 
 struct state_t {
@@ -29,47 +32,6 @@ static fp_t multiply(qubit_t spin, fp_t jcoup)
     return ((!spin) ? (negate(jcoup)) : (jcoup));
 }
 
-template <u32_t STRIDE>
-void reduceInterDim(fp_t buf[JCOUP_BANK_NUM][PACKET_SIZE])
-{
-    reduceInterDim<(STRIDE >> 1)>(buf);
-    for (u32_t i = 0; i < JCOUP_BANK_NUM; i += STRIDE) {
-#pragma HLS UNROLL
-        buf[i][0] += buf[i + (STRIDE >> 1)][0];
-    }
-}
-
-template <>
-void reduceInterDim<1>(fp_t buf[JCOUP_BANK_NUM][PACKET_SIZE])
-{
-    ;
-}
-
-template <u32_t BUF_SIZE, u32_t STRIDE>
-void reduceIntraDim(fp_t buf[BUF_SIZE])
-{
-#pragma HLS INLINE
-    reduceIntraDim<BUF_SIZE, STRIDE / 2>(buf);
-    for (u32_t i = 0; i < BUF_SIZE; i += STRIDE) {
-#pragma HLS UNROLL
-        buf[i] += buf[i + STRIDE / 2];
-    }
-}
-
-template <>
-void reduceIntraDim<PACKET_SIZE, 1>(fp_t buf[PACKET_SIZE])
-{
-    ;
-}
-
-#if (NUM_COL_JCOUP_MEM_BANK != PACKET_SIZE)
-template <>
-void reduceIntraDim<NUM_COL_JCOUP_MEM_BANK, 1>(fp_t buf[NUM_COL_JCOUP_MEM_BANK])
-{
-    ;
-}
-#endif
-
 static fp_t calcEnergy(const qubitPack_t qubitsCache[NUM_COL_QUBIT_CACHE],
                        const fpPack_t    jcoupCacheBank0[NUM_COL_JCOUP_MEM_BANK],
                        const fpPack_t    jcoupCacheBank1[NUM_COL_JCOUP_MEM_BANK])
@@ -85,18 +47,16 @@ CALC_ENERGY:
 #pragma HLS PIPELINE
         for (u32_t qubitIdx = 0; qubitIdx < PACKET_SIZE; qubitIdx++) {
 #pragma HLS UNROLL
-            qubitLevelBuf[0][qubitIdx] = multiply(qubitsCache[packIdx + 0][qubitIdx],
-                                                  jcoupCacheBank0[colIdx].data[qubitIdx]);
-            qubitLevelBuf[1][qubitIdx] = multiply(qubitsCache[packIdx + 1][qubitIdx],
-                                                  jcoupCacheBank1[colIdx].data[qubitIdx]);
+            qubitLevelBuf[0][qubitIdx] =
+                multiply(qubitsCache[packIdx + 0][qubitIdx], jcoupCacheBank0[colIdx][qubitIdx]);
+            qubitLevelBuf[1][qubitIdx] =
+                multiply(qubitsCache[packIdx + 1][qubitIdx], jcoupCacheBank1[colIdx][qubitIdx]);
         }
-        reduceIntraDim<PACKET_SIZE, PACKET_SIZE>(qubitLevelBuf[0]);
-        reduceIntraDim<PACKET_SIZE, PACKET_SIZE>(qubitLevelBuf[1]);
-        reduceInterDim<JCOUP_BANK_NUM>(qubitLevelBuf);
-        packLevelBuf[colIdx] = qubitLevelBuf[0][0];
+        packLevelBuf[colIdx] =
+            hlslib::TreeReduce<fp_t, hlslib::op::Add<fp_t>, PACKET_SIZE>(qubitLevelBuf[0]) +
+            hlslib::TreeReduce<fp_t, hlslib::op::Add<fp_t>, PACKET_SIZE>(qubitLevelBuf[1]);
     }
-    reduceIntraDim<NUM_COL_JCOUP_MEM_BANK, NUM_COL_JCOUP_MEM_BANK>(packLevelBuf);
-    return packLevelBuf[0];
+    return hlslib::TreeReduce<fp_t, hlslib::op::Add<fp_t>, NUM_COL_JCOUP_MEM_BANK>(packLevelBuf);
 }
 
 static void updateQubit(const u32_t stage, const info_t info, const state_t state,
@@ -164,11 +124,11 @@ UPDATE_INPUT_STATE:
         u32_t packIdx   = colIdx / PACKET_SIZE;
         u32_t qubitIdx  = colIdx % PACKET_SIZE;
         state[trotIdx]  = state_t{.packIdx  = packIdx,
-                                  .qubitIdx = qubitIdx,
-                                  .upQubit  = qubitsCache[upTrotIdx][packIdx][qubitIdx],
-                                  .dwQubit  = qubitsCache[dwTrotIdx][packIdx][qubitIdx],
-                                  .h        = hCache[colIdx],
-                                  .rndNum   = rndNumPrefetch[trotIdx]};
+                                 .qubitIdx = qubitIdx,
+                                 .upQubit  = qubitsCache[upTrotIdx][packIdx][qubitIdx],
+                                 .dwQubit  = qubitsCache[dwTrotIdx][packIdx][qubitIdx],
+                                 .h        = hCache[colIdx],
+                                 .rndNum   = rndNumPrefetch[trotIdx]};
     }
 }
 
@@ -260,7 +220,7 @@ LOOP_STAGE:
         if (stage != -1) {
         UPDATE_QUBITS:
             for (u32_t trotIdx = 0; trotIdx < MAX_TROTTER_NUM; trotIdx++) {
-#pragma HLS UNROLL
+#pragma HLS UNROLL factor = 8
                 fp_t e = calcEnergy(qubitsCache[trotIdx], jcoupCacheBank0[trotIdx],
                                     jcoupCacheBank1[trotIdx]);
                 updateQubit(stage, info[trotIdx], state[trotIdx], e, qubitsCache[trotIdx]);
@@ -336,10 +296,6 @@ void RunSQAHardware(u32_t nTrotters, u32_t nQubits, u32_t nSteps, fp_t beta, i32
     fp_t        rndNumCache1[MAX_TROTTER_NUM][NUM_COL_RNDNUM_CACHE];
     i32_t       seed[MAX_TROTTER_NUM];
 #if RESOURCE_CONSTRAINT
-    #pragma HLS BIND_STORAGE type = RAM_T2P impl = BRAM variable = qubitsCache
-    #pragma HLS BIND_STORAGE type = RAM_T2P impl = BRAM variable = hCache
-    #pragma HLS BIND_STORAGE type = RAM_T2P impl = BRAM variable = rndNumCache0
-    #pragma HLS BIND_STORAGE type = RAM_T2P impl = BRAM variable = rndNumCache1
     #pragma HLS ARRAY_PARTITION dim = 1 type = cyclic factor = 4 variable = qubitsCache
     #pragma HLS ARRAY_PARTITION dim = 1 type = cyclic factor = 4 variable = hCache
     #pragma HLS ARRAY_PARTITION dim = 1 type = cyclic factor = 4 variable = rndNumCache0
