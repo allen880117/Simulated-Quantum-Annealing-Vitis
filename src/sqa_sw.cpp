@@ -88,8 +88,8 @@ static fp_t genRndNum(i32_t &seed)
     return r;
 }
 
-static void fillRndNumMem(fp_t  rndNumMem[MAX_TROTTER_NUM][NUM_COL_RNDNUM_MEM],
-                          i32_t seed[MAX_TROTTER_NUM], fp_t beta)
+static void fillRndNumCache(fp_t  rndNumCache[MAX_TROTTER_NUM][NUM_COL_RNDNUM_CACHE],
+                            i32_t seed[MAX_TROTTER_NUM], fp_t beta)
 {
 #if USING_STD_RNG
     static std::mt19937                  rng(12347);
@@ -97,15 +97,17 @@ static void fillRndNumMem(fp_t  rndNumMem[MAX_TROTTER_NUM][NUM_COL_RNDNUM_MEM],
 #endif
 
 #pragma HLS INLINE off
+
+FILL_RNDNUM_CACHE:
     for (u32_t trotIdx = 0; trotIdx < MAX_TROTTER_NUM; trotIdx++) {
 #pragma HLS UNROLL
-        for (u32_t colIdx = 0; colIdx < NUM_COL_RNDNUM_MEM; colIdx++) {
-#pragma HLS UNROLL factor = 4
+        for (u32_t colIdx = 0; colIdx < NUM_COL_RNDNUM_CACHE; colIdx++) {
+#pragma HLS PIPELINE
 #if USING_STD_RNG
-            fp_t tmp                   = unif(rng);
-            rndNumMem[trotIdx][colIdx] = log(unif(rng)) / beta / 2.0f;
+            fp_t tmp                     = unif(rng);
+            rndNumCache[trotIdx][colIdx] = log(tmp) / beta / 2.0f;
 #else
-            rndNumMem[trotIdx][colIdx] = log(genRndNum(seed[trotIdx])) / beta / 2.0f;
+            rndNumCache[trotIdx][colIdx] = log(genRndNum(seed[trotIdx])) / beta / 2.0f;
 #endif
         }
     }
@@ -118,8 +120,8 @@ void RunSQASoftware(u32_t nTrotters, u32_t nQubits, u32_t nSteps, fp_t beta, i32
                     fp_t jperpMem[MAX_STEP_NUM], qubit_t qubits[MAX_TROTTER_NUM][MAX_QUBIT_NUM])
 {
     /* Caches and Static Memory */
-    fp_t  rndNumMem0[MAX_TROTTER_NUM][NUM_COL_RNDNUM_MEM];
-    fp_t  rndNumMem1[MAX_TROTTER_NUM][NUM_COL_RNDNUM_MEM];
+    fp_t  rndNumMem0[MAX_TROTTER_NUM][NUM_COL_RNDNUM_CACHE];
+    fp_t  rndNumMem1[MAX_TROTTER_NUM][NUM_COL_RNDNUM_CACHE];
     i32_t seed[MAX_TROTTER_NUM];
 
     /* Init seed */
@@ -128,7 +130,7 @@ void RunSQASoftware(u32_t nTrotters, u32_t nQubits, u32_t nSteps, fp_t beta, i32
         seed[trotIdx] = initRndNumSeed + trotIdx;
 
     /* Prefill Random Number Memory */
-    fillRndNumMem(rndNumMem0, seed, beta);
+    fillRndNumCache(rndNumMem0, seed, beta);
 
     /* Main loop */
     for (u32_t step = 0; step < MAX_STEP_NUM; step++) {
@@ -137,10 +139,10 @@ void RunSQASoftware(u32_t nTrotters, u32_t nQubits, u32_t nSteps, fp_t beta, i32
             fp_t jperp = jperpMem[step];
             if (step & (0x01)) {
                 RunSQASoftwareOneStep(nTrotters, nQubits, jperp, hMem, rndNumMem1, jcoup, qubits);
-                fillRndNumMem(rndNumMem0, seed, beta);
+                fillRndNumCache(rndNumMem0, seed, beta);
             } else {
                 RunSQASoftwareOneStep(nTrotters, nQubits, jperp, hMem, rndNumMem0, jcoup, qubits);
-                fillRndNumMem(rndNumMem1, seed, beta);
+                fillRndNumCache(rndNumMem1, seed, beta);
             }
 
             if ((step + 1) % 20 == 0) std::cout << (step + 1) << " iterations done..." << std::endl;

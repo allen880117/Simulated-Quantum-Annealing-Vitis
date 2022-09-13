@@ -9,7 +9,7 @@
 #include "sqa_csim_helper.hpp"
 
 #ifndef U50
-    #define U50 1
+    #define U50 0
 #endif
 #ifndef WARP_MODE
     #define WARP_MODE 1
