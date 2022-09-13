@@ -99,7 +99,7 @@ void PackJcoup(fpPack_t JcoupPack[MAX_QUBIT_NUM][MAX_QUBIT_NUM / PACKET_SIZE],
     for (int i = 0; i < MAX_QUBIT_NUM; i++) {
         for (int j = 0; j < MAX_QUBIT_NUM / PACKET_SIZE; j++) {
             for (int k = 0; k < PACKET_SIZE; k++) {
-                JcoupPack[i][j].data[k] = Jcoup[i][j * PACKET_SIZE + k];
+                JcoupPack[i][j][k] = Jcoup[i][j * PACKET_SIZE + k];
             }
         }
     }
