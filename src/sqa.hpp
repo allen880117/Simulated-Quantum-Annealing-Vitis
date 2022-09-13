@@ -14,7 +14,7 @@
     #include <random>
 #endif
 
-#define RESOURCE_CONSTRAINT 0
+#define RESOURCE_CONSTRAINT 1
 
 /* Common parameters */
 #if __SYNTHESIS__

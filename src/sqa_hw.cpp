@@ -220,7 +220,7 @@ LOOP_STAGE:
         if (stage != -1) {
         UPDATE_QUBITS:
             for (u32_t trotIdx = 0; trotIdx < MAX_TROTTER_NUM; trotIdx++) {
-#pragma HLS UNROLL factor = 8
+#pragma HLS UNROLL
                 fp_t e = calcEnergy(qubitsCache[trotIdx], jcoupCacheBank0[trotIdx],
                                     jcoupCacheBank1[trotIdx]);
                 updateQubit(stage, info[trotIdx], state[trotIdx], e, qubitsCache[trotIdx]);
@@ -257,7 +257,6 @@ FILL_RNDNUM_CACHE:
     for (u32_t trotIdx = 0; trotIdx < MAX_TROTTER_NUM; trotIdx++) {
 #pragma HLS UNROLL
         for (u32_t colIdx = 0; colIdx < NUM_COL_RNDNUM_CACHE; colIdx++) {
-#pragma HLS PIPELINE
 #if USING_STD_RNG
             fp_t tmp                     = unif(rng);
             rndNumCache[trotIdx][colIdx] = log(tmp) / beta / 2.0f;
