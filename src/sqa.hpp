@@ -19,7 +19,7 @@
 
 /* Common parameters */
 #if __SYNTHESIS__
-    #define MAX_TROTTER_NUM     16
+    #define MAX_TROTTER_NUM		8
     #define MAX_QUBIT_NUM       4096
     #define MAX_STEP_NUM        1024
     #define PACKET_SIZE         64
