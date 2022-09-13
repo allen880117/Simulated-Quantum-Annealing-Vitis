@@ -15,9 +15,11 @@
     #include <random>
 #endif
 
+#define RESOURCE_CONSTRAINT 0
+
 /* Common parameters */
 #if __SYNTHESIS__
-    #define MAX_TROTTER_NUM     4
+    #define MAX_TROTTER_NUM     16
     #define MAX_QUBIT_NUM       4096
     #define MAX_STEP_NUM        1024
     #define PACKET_SIZE         64
@@ -52,7 +54,7 @@ typedef ap_uint<PACKET_SIZE> qubitPack_t;
 #define NUM_COL_QUBIT_MEM      (MAX_QUBIT_NUM / PACKET_SIZE)
 #define NUM_COL_QUBIT_CACHE    (NUM_COL_QUBIT_MEM)
 #define NUM_COL_JCOUP_MEM_BANK (MAX_QUBIT_NUM / PACKET_SIZE / JCOUP_BANK_NUM)
-#define NUM_COL_RNDNUM_MEM     (MAX_QUBIT_NUM)
+#define NUM_COL_RNDNUM_CACHE     (MAX_QUBIT_NUM)
 
 #ifndef __SYNTHESIS__
 extern qubitPack_t qubitsMemLogHW[MAX_STEP_NUM][MAX_TROTTER_NUM][NUM_COL_QUBIT_CACHE];
@@ -62,7 +64,7 @@ extern qubit_t     qubitsLogSW[MAX_STEP_NUM][MAX_TROTTER_NUM][MAX_QUBIT_NUM];
 /* Prototype of Functions */
 extern "C" {
 void RunSQAHardwareOneStep(u32_t nTrotters, u32_t nQubits, fp_t jperp, fp_t hCache[MAX_QUBIT_NUM],
-                           fp_t        rndNumMem[MAX_TROTTER_NUM][NUM_COL_RNDNUM_MEM],
+                           fp_t        rndNumMem[MAX_TROTTER_NUM][NUM_COL_RNDNUM_CACHE],
                            fpPack_t    jcoupMemBank0[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
                            fpPack_t    jcoupMemBank1[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
                            qubitPack_t qubitsCache[MAX_TROTTER_NUM][NUM_COL_QUBIT_CACHE]);

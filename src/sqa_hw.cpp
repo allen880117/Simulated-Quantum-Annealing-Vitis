@@ -71,26 +71,29 @@ void reduceIntraDim<NUM_COL_JCOUP_MEM_BANK, 1>(fp_t buf[NUM_COL_JCOUP_MEM_BANK])
 #endif
 
 static fp_t calcEnergy(const qubitPack_t qubitsCache[NUM_COL_QUBIT_CACHE],
-                       const fpPack_t    jcoupCache[NUM_COL_JCOUP_MEM_BANK][JCOUP_BANK_NUM])
+                       const fpPack_t    jcoupCacheBank0[NUM_COL_JCOUP_MEM_BANK],
+					   const fpPack_t    jcoupCacheBank1[NUM_COL_JCOUP_MEM_BANK])
 {
 #pragma HLS INLINE OFF
     fp_t packLevelBuf[NUM_COL_JCOUP_MEM_BANK];
     fp_t qubitLevelBuf[JCOUP_BANK_NUM][PACKET_SIZE];
 
+CALC_ENERGY:
     for (u32_t colIdx = 0, packIdx = 0; colIdx < NUM_COL_JCOUP_MEM_BANK;
          colIdx++, packIdx += JCOUP_BANK_NUM) {
         CTX_PRAGMA(HLS ALLOCATION operation instances = fadd limit = NUM_FADD)
 #pragma HLS PIPELINE
-        for (u32_t bankIdx = 0; bankIdx < JCOUP_BANK_NUM; bankIdx++) {
+		for (u32_t qubitIdx = 0; qubitIdx < PACKET_SIZE; qubitIdx++) {
 #pragma HLS UNROLL
-            for (u32_t qubitIdx = 0; qubitIdx < PACKET_SIZE; qubitIdx++) {
-#pragma HLS UNROLL
-                qubitLevelBuf[bankIdx][qubitIdx] =
-                    multiply(qubitsCache[packIdx + bankIdx][qubitIdx],
-                             jcoupCache[colIdx][bankIdx].data[qubitIdx]);
-            }
-            reduceIntraDim<PACKET_SIZE, PACKET_SIZE>(qubitLevelBuf[bankIdx]);
-        }
+			qubitLevelBuf[0][qubitIdx] =
+				multiply(qubitsCache[packIdx + 0][qubitIdx],
+						 jcoupCacheBank0[colIdx].data[qubitIdx]);
+			qubitLevelBuf[1][qubitIdx] =
+				multiply(qubitsCache[packIdx + 1][qubitIdx],
+						 jcoupCacheBank1[colIdx].data[qubitIdx]);
+		}
+		reduceIntraDim<PACKET_SIZE, PACKET_SIZE>(qubitLevelBuf[0]);
+		reduceIntraDim<PACKET_SIZE, PACKET_SIZE>(qubitLevelBuf[1]);
         reduceInterDim<JCOUP_BANK_NUM>(qubitLevelBuf);
         packLevelBuf[colIdx] = qubitLevelBuf[0][0];
     }
@@ -125,27 +128,28 @@ static void updateQubit(const u32_t stage, const info_t info, const state_t stat
 static void prefetchJcoup(i32_t    stage,
                           fpPack_t jcoupMemBank0[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
                           fpPack_t jcoupMemBank1[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
-                          fpPack_t jcoupPrefetch[NUM_COL_JCOUP_MEM_BANK][JCOUP_BANK_NUM])
+                          fpPack_t jcoupPrefetch0[NUM_COL_JCOUP_MEM_BANK],
+						  fpPack_t jcoupPrefetch1[NUM_COL_JCOUP_MEM_BANK])
 {
 #pragma HLS INLINE
 PREFETCH_JCOUP:
     for (u32_t colIdx = 0; colIdx < NUM_COL_JCOUP_MEM_BANK; colIdx++) {
 #pragma HLS PIPELINE
         u32_t ofst               = (stage + 1) & (MAX_QUBIT_NUM - 1);
-        jcoupPrefetch[colIdx][0] = jcoupMemBank0[ofst][colIdx];
-        jcoupPrefetch[colIdx][1] = jcoupMemBank1[ofst][colIdx];
+        jcoupPrefetch0[colIdx] = jcoupMemBank0[ofst][colIdx];
+        jcoupPrefetch1[colIdx] = jcoupMemBank1[ofst][colIdx];
     }
 }
 
-static void prefetchRndNum(i32_t stage, fp_t rndNumMem[MAX_TROTTER_NUM][NUM_COL_RNDNUM_MEM],
+static void prefetchRndNum(i32_t stage, fp_t rndNumCache[MAX_TROTTER_NUM][NUM_COL_RNDNUM_CACHE],
                            fp_t rndNumPrefetch[MAX_TROTTER_NUM])
 {
 #pragma HLS INLINE
 PREFETCH_RNDNUM:
     for (u32_t trotIdx = 0; trotIdx < MAX_TROTTER_NUM; trotIdx++) {
-#pragma HLS UNROLL
+#pragma HLS UNROLL factor = 4
         u32_t colIdx            = (((stage + 1) + MAX_QUBIT_NUM - trotIdx) & (MAX_QUBIT_NUM - 1));
-        rndNumPrefetch[trotIdx] = rndNumMem[trotIdx][colIdx];
+        rndNumPrefetch[trotIdx] = rndNumCache[trotIdx][colIdx];
     }
 }
 
@@ -155,7 +159,7 @@ static void updateState(u32_t stage, state_t state[MAX_TROTTER_NUM], fp_t hCache
 {
 UPDATE_INPUT_STATE:
     for (u32_t trotIdx = 0; trotIdx < MAX_TROTTER_NUM; trotIdx++) {
-#pragma HLS UNROLL
+#pragma HLS UNROLL factor = 4
         u32_t colIdx    = ((stage + MAX_QUBIT_NUM - trotIdx) & (MAX_QUBIT_NUM - 1));
         u32_t upTrotIdx = (trotIdx == 0) ? (MAX_TROTTER_NUM - 1) : (trotIdx - 1);
         u32_t dwTrotIdx = (trotIdx == MAX_TROTTER_NUM - 1) ? (0) : (trotIdx + 1);
@@ -171,82 +175,94 @@ UPDATE_INPUT_STATE:
 }
 
 static void shiftJcoupCache(
-    u32_t stage, fpPack_t jcoupCache[MAX_TROTTER_NUM][NUM_COL_JCOUP_MEM_BANK][JCOUP_BANK_NUM],
-    fpPack_t jcoupPrefetch[NUM_COL_JCOUP_MEM_BANK][JCOUP_BANK_NUM])
+    u32_t stage, fpPack_t jcoupCacheBank0[MAX_TROTTER_NUM][NUM_COL_JCOUP_MEM_BANK],
+	fpPack_t jcoupCacheBank1[MAX_TROTTER_NUM][NUM_COL_JCOUP_MEM_BANK],
+    fpPack_t jcoupPrefetch0[NUM_COL_JCOUP_MEM_BANK], fpPack_t jcoupPrefetch1[NUM_COL_JCOUP_MEM_BANK])
 {
 SHIFT_DOWN_JCOUP_CACHE:
     for (u32_t colIdx = 0; colIdx < NUM_COL_JCOUP_MEM_BANK; colIdx++) {
 #pragma HLS PIPELINE
         for (i32_t trotIdx = MAX_TROTTER_NUM - 2; trotIdx >= 0; trotIdx--) {
 #pragma HLS UNROLL
-            jcoupCache[trotIdx + 1][colIdx][0] = jcoupCache[trotIdx][colIdx][0];
-            jcoupCache[trotIdx + 1][colIdx][1] = jcoupCache[trotIdx][colIdx][1];
+            jcoupCacheBank0[trotIdx + 1][colIdx] = jcoupCacheBank0[trotIdx][colIdx];
+            jcoupCacheBank1[trotIdx + 1][colIdx] = jcoupCacheBank1[trotIdx][colIdx];
         }
-        jcoupCache[0][colIdx][0] = jcoupPrefetch[colIdx][0];
-        jcoupCache[0][colIdx][1] = jcoupPrefetch[colIdx][1];
+        jcoupCacheBank0[0][colIdx] = jcoupPrefetch0[colIdx];
+        jcoupCacheBank1[0][colIdx] = jcoupPrefetch1[colIdx];
     }
 }
 
 extern "C" {
 void RunSQAHardwareOneStep(u32_t nTrotters, u32_t nQubits, fp_t jperp, fp_t hCache[MAX_QUBIT_NUM],
-                           fp_t        rndNumMem[MAX_TROTTER_NUM][NUM_COL_RNDNUM_MEM],
+                           fp_t        rndNumCache[MAX_TROTTER_NUM][NUM_COL_RNDNUM_CACHE],
                            fpPack_t    jcoupMemBank0[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
                            fpPack_t    jcoupMemBank1[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
                            qubitPack_t qubitsCache[MAX_TROTTER_NUM][NUM_COL_QUBIT_CACHE])
 {
 #pragma HLS INLINE off
-    // Pragma: Aggreate for better throughput
-    // #pragma HLS AGGREGATE compact = auto variable = jcoupMemBank0
-    // #pragma HLS AGGREGATE compact = auto variable = jcoupMemBank1
-    // #pragma HLS AGGREGATE compact = auto variable = qubitsCache
+
+	// Pragma: Aggreate for better throughput
+#pragma HLS AGGREGATE compact = auto variable = jcoupMemBank0
+#pragma HLS AGGREGATE compact = auto variable = jcoupMemBank1
+#pragma HLS AGGREGATE compact = auto variable = qubitsCache
 
     // Pragma: Partition
-#pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = rndNumMem
+#if RESOURCE_CONSTRAINT
+#pragma HLS ARRAY_PARTITION dim = 1 type = cyclic factor = 4 variable = hCache
+#pragma HLS ARRAY_PARTITION dim = 1 type = cyclic factor = 4 variable = rndNumCache
+#pragma HLS ARRAY_PARTITION dim = 1 type = cyclic factor = 4 variable = qubitsCache
+#else
+#pragma HLS ARRAY_PARTITION dim = 1 type = cyclic factor = 4 variable = hCache
+#pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = rndNumCache
 #pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = qubitsCache
+#endif
 
     // Jcoup Cache and Prefetch Storage
-    fpPack_t jcoupCache[MAX_TROTTER_NUM][NUM_COL_JCOUP_MEM_BANK][JCOUP_BANK_NUM];
-    fpPack_t jcoupPrefetch[NUM_COL_JCOUP_MEM_BANK][JCOUP_BANK_NUM];
+    fpPack_t jcoupCacheBank0[MAX_TROTTER_NUM][NUM_COL_JCOUP_MEM_BANK];
+    fpPack_t jcoupCacheBank1[MAX_TROTTER_NUM][NUM_COL_JCOUP_MEM_BANK];
+    fpPack_t jcoupPrefetch0[NUM_COL_JCOUP_MEM_BANK];
+    fpPack_t jcoupPrefetch1[NUM_COL_JCOUP_MEM_BANK];
     fp_t     rndNumPrefetch[MAX_TROTTER_NUM];
-// Disable these 2 pragmas, when this function is not top
-// Don't know why these pragmas affect the memory partition and aggregation
-// #pragma HLS AGGREGATE compact = auto variable = jcoupCache
-// #pragma HLS AGGREGATE compact = auto variable = jcoupPrefetch
-#pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = jcoupCache
+#if RESOURCE_CONSTRAINT
+#pragma HLS ARRAY_PARTITION dim = 1 type = cyclic factor = 4 variable = jcoupCacheBank0
+#pragma HLS ARRAY_PARTITION dim = 1 type = cyclic factor = 4 variable = jcoupCacheBank1
+#pragma HLS ARRAY_PARTITION dim = 1 type = cyclic factor = 4 variable = rndNumPrefetch
+#else
+#pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = jcoupCacheBank0
+#pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = jcoupCacheBank1
 #pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = rndNumPrefetch
+#endif
 
     // Quantum Effect and Input State and Info of PE
     fp_t    qEffectPos = jperp * ((fp_t)nTrotters);
     fp_t    qEffectNeg = negate(qEffectPos);
     state_t state[MAX_TROTTER_NUM];
     info_t  info[MAX_TROTTER_NUM];
-#pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = state
-#pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = info
+#pragma HLS ARRAY_PARTITION dim = 1 type = cyclic factor = 4 variable = state
+#pragma HLS ARRAY_PARTITION dim = 1 type = cyclic factor = 4 variable = info
 
-    // Initialize infos
+INIT_INFO:
     for (u32_t trotIdx = 0; trotIdx < MAX_TROTTER_NUM; trotIdx++) {
-#pragma HLS UNROLL
+#pragma HLS UNROLL factor = 4
         info[trotIdx] =
             info_t{.trotIdx = trotIdx, .qEffectPos = qEffectPos, .qEffectNeg = qEffectNeg};
     }
 
-    // Prefetch Jcoup before the loop of stages
-    prefetchJcoup(-1, jcoupMemBank0, jcoupMemBank1, jcoupPrefetch);
-    prefetchRndNum(-1, rndNumMem, rndNumPrefetch);
-
 LOOP_STAGE:
-    for (u32_t stage = 0; stage < (MAX_QUBIT_NUM + MAX_TROTTER_NUM - 1); stage++) {
+    for (i32_t stage = -1; stage < (MAX_QUBIT_NUM + MAX_TROTTER_NUM - 1); stage++) {
 #pragma HLS PIPELINE off
-        updateState(stage, state, hCache, rndNumPrefetch, qubitsCache);
-        prefetchRndNum(stage, rndNumMem, rndNumPrefetch);
-        shiftJcoupCache(stage, jcoupCache, jcoupPrefetch);
-        prefetchJcoup(stage, jcoupMemBank0, jcoupMemBank1, jcoupPrefetch);
+        if (stage != -1) updateState(stage, state, hCache, rndNumPrefetch, qubitsCache);
+        prefetchRndNum(stage, rndNumCache, rndNumPrefetch);
+        if (stage != -1) shiftJcoupCache(stage, jcoupCacheBank0, jcoupCacheBank1, jcoupPrefetch0, jcoupPrefetch1);
+        prefetchJcoup(stage, jcoupMemBank0, jcoupMemBank1, jcoupPrefetch0, jcoupPrefetch1);
 
-    UPDATE_QUBITS:
-        for (u32_t trotIdx = 0; trotIdx < MAX_TROTTER_NUM; trotIdx++) {
+        if (stage != -1){
+        	UPDATE_QUBITS:
+			for (u32_t trotIdx = 0; trotIdx < MAX_TROTTER_NUM; trotIdx++) {
 #pragma HLS UNROLL
-            fp_t e = calcEnergy(qubitsCache[trotIdx], jcoupCache[trotIdx]);
-            updateQubit(stage, info[trotIdx], state[trotIdx], e, qubitsCache[trotIdx]);
+				fp_t e = calcEnergy(qubitsCache[trotIdx], jcoupCacheBank0[trotIdx], jcoupCacheBank1[trotIdx]);
+				updateQubit(stage, info[trotIdx], state[trotIdx], e, qubitsCache[trotIdx]);
+			}
         }
     }
 }
@@ -265,7 +281,7 @@ static fp_t genRndNum(i32_t &seed)
     return r;
 }
 
-static void fillRndNumMem(fp_t  rndNumMem[MAX_TROTTER_NUM][NUM_COL_RNDNUM_MEM],
+static void fillRndNumCache(fp_t  rndNumCache[MAX_TROTTER_NUM][NUM_COL_RNDNUM_CACHE],
                           i32_t seed[MAX_TROTTER_NUM], fp_t beta)
 {
 #if USING_STD_RNG
@@ -274,15 +290,17 @@ static void fillRndNumMem(fp_t  rndNumMem[MAX_TROTTER_NUM][NUM_COL_RNDNUM_MEM],
 #endif
 
 #pragma HLS INLINE off
+
+FILL_RNDNUM_CACHE:
     for (u32_t trotIdx = 0; trotIdx < MAX_TROTTER_NUM; trotIdx++) {
 #pragma HLS UNROLL
-        for (u32_t colIdx = 0; colIdx < NUM_COL_RNDNUM_MEM; colIdx++) {
-#pragma HLS UNROLL factor = 4
+        for (u32_t colIdx = 0; colIdx < NUM_COL_RNDNUM_CACHE; colIdx++) {
+#pragma HLS PIPELINE
 #if USING_STD_RNG
             fp_t tmp                   = unif(rng);
-            rndNumMem[trotIdx][colIdx] = log(tmp) / beta / 2.0f;
+            rndNumCache[trotIdx][colIdx] = log(tmp) / beta / 2.0f;
 #else
-            rndNumMem[trotIdx][colIdx] = log(genRndNum(seed[trotIdx])) / beta / 2.0f;
+            rndNumCache[trotIdx][colIdx] = log(genRndNum(seed[trotIdx])) / beta / 2.0f;
 #endif
         }
     }
@@ -299,6 +317,12 @@ void RunSQAHardware(u32_t nTrotters, u32_t nQubits, u32_t nSteps, fp_t beta, i32
                     fp_t hMem[MAX_QUBIT_NUM], fp_t jperpMem[MAX_STEP_NUM],
                     qubitPack_t qubitsMem[MAX_TROTTER_NUM][NUM_COL_QUBIT_CACHE])
 {
+#pragma HLS INTERFACE mode = m_axi bundle = gmem0 port = jcoupMemBank0
+#pragma HLS INTERFACE mode = m_axi bundle = gmem1 port = jcoupMemBank1
+#pragma HLS INTERFACE mode = m_axi bundle = gmem2 port = hMem
+#pragma HLS INTERFACE mode = m_axi bundle = gmem3 port = jperpMem
+#pragma HLS INTERFACE mode = m_axi bundle = gmem4 port = qubitsMem
+
 #pragma HLS AGGREGATE compact = auto variable = jcoupMemBank0
 #pragma HLS AGGREGATE compact = auto variable = jcoupMemBank1
 #pragma HLS AGGREGATE compact = auto variable = qubitsMem
@@ -306,47 +330,61 @@ void RunSQAHardware(u32_t nTrotters, u32_t nQubits, u32_t nSteps, fp_t beta, i32
     /* Caches and Static Memory */
     qubitPack_t qubitsCache[MAX_TROTTER_NUM][NUM_COL_QUBIT_CACHE];
     fp_t        hCache[MAX_QUBIT_NUM];
-    fp_t        rndNumMem0[MAX_TROTTER_NUM][NUM_COL_RNDNUM_MEM];
-    fp_t        rndNumMem1[MAX_TROTTER_NUM][NUM_COL_RNDNUM_MEM];
+    fp_t        rndNumCache0[MAX_TROTTER_NUM][NUM_COL_RNDNUM_CACHE];
+    fp_t        rndNumCache1[MAX_TROTTER_NUM][NUM_COL_RNDNUM_CACHE];
     i32_t       seed[MAX_TROTTER_NUM];
+#if RESOURCE_CONSTRAINT
+#pragma HLS BIND_STORAGE type = RAM_T2P impl = BRAM variable = qubitsCache
+#pragma HLS BIND_STORAGE type = RAM_T2P impl = BRAM variable = hCache
+#pragma HLS BIND_STORAGE type = RAM_T2P impl = BRAM variable = rndNumCache0
+#pragma HLS BIND_STORAGE type = RAM_T2P impl = BRAM variable = rndNumCache1
+#pragma HLS ARRAY_PARTITION dim = 1 type = cyclic factor = 4 variable = qubitsCache
+#pragma HLS ARRAY_PARTITION dim = 1 type = cyclic factor = 4 variable = hCache
+#pragma HLS ARRAY_PARTITION dim = 1 type = cyclic factor = 4 variable = rndNumCache0
+#pragma HLS ARRAY_PARTITION dim = 1 type = cyclic factor = 4 variable = rndNumCache1
+#pragma HLS ARRAY_PARTITION dim = 1 type = cyclic factor = 4 variable = seed
+#pragma HLS AGGREGATE compact = auto variable = qubitsCache
+#else
 #pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = qubitsCache
-#pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = rndNumMem0
-#pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = rndNumMem1
+#pragma HLS ARRAY_PARTITION dim = 1 type = cyclic factor = 4 variable = hCache
+#pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = rndNumCache0
+#pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = rndNumCache1
 #pragma HLS ARRAY_PARTITION dim = 1 type = complete variable = seed
 #pragma HLS AGGREGATE compact = auto variable = qubitsCache
+#endif
 
-    /* Cache qubits */
+CACHE_QUBITS:
     for (u32_t trotIdx = 0; trotIdx < MAX_TROTTER_NUM; trotIdx++)
         for (u32_t colIdx = 0; colIdx < NUM_COL_QUBIT_CACHE; colIdx++)
 #pragma HLS PIPELINE
             qubitsCache[trotIdx][colIdx] = qubitsMem[trotIdx][colIdx];
 
-    /* Cache h */
+CACHE_H:
     for (u32_t colIdx = 0; colIdx < MAX_QUBIT_NUM; colIdx++)
 #pragma HLS PIPELINE
         hCache[colIdx] = hMem[colIdx];
 
-    /* Init seed */
+INIT_SEED:
     for (u32_t trotIdx = 0; trotIdx < MAX_TROTTER_NUM; trotIdx++)
 #pragma HLS UNROLL
         seed[trotIdx] = initRndNumSeed + trotIdx;
 
     /* Prefill Random Number Memory */
-    fillRndNumMem(rndNumMem0, seed, beta);
+    fillRndNumCache(rndNumCache0, seed, beta);
 
-    /* Main loop */
+SQA_MAIN_LOOP:
     for (u32_t step = 0; step < MAX_STEP_NUM; step++) {
 #pragma HLS PIPELINE off
         if (step < nSteps) {
             fp_t jperp = jperpMem[step];
             if (step & (0x01)) {
-                RunSQAHardwareOneStep(nTrotters, nQubits, jperp, hCache, rndNumMem1, jcoupMemBank0,
+                RunSQAHardwareOneStep(nTrotters, nQubits, jperp, hCache, rndNumCache1, jcoupMemBank0,
                                       jcoupMemBank1, qubitsCache);
-                fillRndNumMem(rndNumMem0, seed, beta);
+                fillRndNumCache(rndNumCache0, seed, beta);
             } else {
-                RunSQAHardwareOneStep(nTrotters, nQubits, jperp, hCache, rndNumMem0, jcoupMemBank0,
+                RunSQAHardwareOneStep(nTrotters, nQubits, jperp, hCache, rndNumCache0, jcoupMemBank0,
                                       jcoupMemBank1, qubitsCache);
-                fillRndNumMem(rndNumMem1, seed, beta);
+                fillRndNumCache(rndNumCache1, seed, beta);
             }
 #ifndef __SYNTHESIS__
             if ((step + 1) % 20 == 0) std::cout << (step + 1) << " iterations done..." << std::endl;
@@ -357,7 +395,7 @@ void RunSQAHardware(u32_t nTrotters, u32_t nQubits, u32_t nSteps, fp_t beta, i32
         }
     }
 
-    /* Writeback Cache */
+WRITEBACK_CACHE:
     for (u32_t trotIdx = 0; trotIdx < MAX_TROTTER_NUM; trotIdx++)
         for (u32_t colIdx = 0; colIdx < NUM_COL_QUBIT_CACHE; colIdx++)
 #pragma HLS PIPELINE
