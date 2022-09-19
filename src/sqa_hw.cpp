@@ -1,6 +1,3 @@
-#include "hls_math.h"
-#include "hlslib/xilinx/Operators.h"
-#include "hlslib/xilinx/TreeReduce.h"
 #include "sqa.hpp"
 
 struct state_t {
@@ -32,6 +29,47 @@ static fp_t multiply(qubit_t spin, fp_t jcoup)
     return ((!spin) ? (negate(jcoup)) : (jcoup));
 }
 
+template <u32_t STRIDE>
+void reduceInterDim(fp_t buf[JCOUP_BANK_NUM][PACKET_SIZE])
+{
+    reduceInterDim<(STRIDE >> 1)>(buf);
+    for (u32_t i = 0; i < JCOUP_BANK_NUM; i += STRIDE) {
+#pragma HLS UNROLL
+        buf[i][0] += buf[i + (STRIDE >> 1)][0];
+    }
+}
+
+template <>
+void reduceInterDim<1>(fp_t buf[JCOUP_BANK_NUM][PACKET_SIZE])
+{
+    ;
+}
+
+template <u32_t BUF_SIZE, u32_t STRIDE>
+void reduceIntraDim(fp_t buf[BUF_SIZE])
+{
+#pragma HLS INLINE
+    reduceIntraDim<BUF_SIZE, STRIDE / 2>(buf);
+    for (u32_t i = 0; i < BUF_SIZE; i += STRIDE) {
+#pragma HLS UNROLL
+        buf[i] += buf[i + STRIDE / 2];
+    }
+}
+
+template <>
+void reduceIntraDim<PACKET_SIZE, 1>(fp_t buf[PACKET_SIZE])
+{
+    ;
+}
+
+#if (NUM_COL_JCOUP_MEM_BANK != PACKET_SIZE)
+template <>
+void reduceIntraDim<NUM_COL_JCOUP_MEM_BANK, 1>(fp_t buf[NUM_COL_JCOUP_MEM_BANK])
+{
+    ;
+}
+#endif
+
 static fp_t calcEnergy(const qubitPack_t qubitsCache[NUM_COL_QUBIT_CACHE],
                        const fpPack_t    jcoupCacheBank0[NUM_COL_JCOUP_MEM_BANK],
                        const fpPack_t    jcoupCacheBank1[NUM_COL_JCOUP_MEM_BANK])
@@ -47,16 +85,18 @@ CALC_ENERGY:
 #pragma HLS PIPELINE
         for (u32_t qubitIdx = 0; qubitIdx < PACKET_SIZE; qubitIdx++) {
 #pragma HLS UNROLL
-            qubitLevelBuf[0][qubitIdx] =
-                multiply(qubitsCache[packIdx + 0][qubitIdx], jcoupCacheBank0[colIdx][qubitIdx]);
-            qubitLevelBuf[1][qubitIdx] =
-                multiply(qubitsCache[packIdx + 1][qubitIdx], jcoupCacheBank1[colIdx][qubitIdx]);
+            qubitLevelBuf[0][qubitIdx] = multiply(qubitsCache[packIdx + 0][qubitIdx],
+                                                  jcoupCacheBank0[colIdx].data[qubitIdx]);
+            qubitLevelBuf[1][qubitIdx] = multiply(qubitsCache[packIdx + 1][qubitIdx],
+                                                  jcoupCacheBank1[colIdx].data[qubitIdx]);
         }
-        packLevelBuf[colIdx] =
-            hlslib::TreeReduce<fp_t, hlslib::op::Add<fp_t>, PACKET_SIZE>(qubitLevelBuf[0]) +
-            hlslib::TreeReduce<fp_t, hlslib::op::Add<fp_t>, PACKET_SIZE>(qubitLevelBuf[1]);
+        reduceIntraDim<PACKET_SIZE, PACKET_SIZE>(qubitLevelBuf[0]);
+        reduceIntraDim<PACKET_SIZE, PACKET_SIZE>(qubitLevelBuf[1]);
+        reduceInterDim<JCOUP_BANK_NUM>(qubitLevelBuf);
+        packLevelBuf[colIdx] = qubitLevelBuf[0][0];
     }
-    return hlslib::TreeReduce<fp_t, hlslib::op::Add<fp_t>, NUM_COL_JCOUP_MEM_BANK>(packLevelBuf);
+    reduceIntraDim<NUM_COL_JCOUP_MEM_BANK, NUM_COL_JCOUP_MEM_BANK>(packLevelBuf);
+    return packLevelBuf[0];
 }
 
 static void updateQubit(const u32_t stage, const info_t info, const state_t state,
