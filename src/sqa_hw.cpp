@@ -180,7 +180,7 @@ static void shiftJcoupCache(u32_t    stage,
 {
 SHIFT_DOWN_JCOUP_CACHE:
     for (u32_t colIdx = 0; colIdx < NUM_COL_JCOUP_MEM_BANK; colIdx++) {
-#pragma HLS PIPELINE
+//#pragma HLS PIPELINE
         for (i32_t trotIdx = MAX_TROTTER_NUM - 2; trotIdx >= 0; trotIdx--) {
 #pragma HLS UNROLL
             jcoupCacheBank0[trotIdx + 1][colIdx] = jcoupCacheBank0[trotIdx][colIdx];
