@@ -180,7 +180,7 @@ static void shiftJcoupCache(u32_t    stage,
 {
 SHIFT_DOWN_JCOUP_CACHE:
     for (u32_t colIdx = 0; colIdx < NUM_COL_JCOUP_MEM_BANK; colIdx++) {
-//#pragma HLS PIPELINE
+        //#pragma HLS PIPELINE
         for (i32_t trotIdx = MAX_TROTTER_NUM - 2; trotIdx >= 0; trotIdx--) {
 #pragma HLS UNROLL
             jcoupCacheBank0[trotIdx + 1][colIdx] = jcoupCacheBank0[trotIdx][colIdx];
@@ -307,26 +307,25 @@ FILL_RNDNUM_CACHE:
     }
 }
 
-#ifndef __SYNTHESIS__
-qubitPack_t qubitsMemLogHW[MAX_STEP_NUM][MAX_TROTTER_NUM][NUM_COL_QUBIT_CACHE];
-#endif
-
 extern "C" {
 void RunSQAHardware(u32_t nTrotters, u32_t nQubits, u32_t nSteps, fp_t beta, i32_t initRndNumSeed,
                     fpPack_t jcoupMemBank0[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
                     fpPack_t jcoupMemBank1[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
                     fp_t hMem[MAX_QUBIT_NUM], fp_t jperpMem[MAX_STEP_NUM],
-                    qubitPack_t qubitsMem[MAX_TROTTER_NUM][NUM_COL_QUBIT_CACHE])
+                    qubitPack_t qubitsMem[MAX_TROTTER_NUM][NUM_COL_QUBIT_CACHE],
+                    qubitPack_t qubitsHistory[MAX_STEP_NUM][MAX_TROTTER_NUM][NUM_COL_QUBIT_MEM])
 {
 #pragma HLS INTERFACE mode = m_axi bundle = gmem0 port = jcoupMemBank0
 #pragma HLS INTERFACE mode = m_axi bundle = gmem1 port = jcoupMemBank1
 #pragma HLS INTERFACE mode = m_axi bundle = gmem2 port = hMem
 #pragma HLS INTERFACE mode = m_axi bundle = gmem3 port = jperpMem
 #pragma HLS INTERFACE mode = m_axi bundle = gmem4 port = qubitsMem
+#pragma HLS INTERFACE mode = m_axi bundle = gmem5 port = qubitsHistory
 
 #pragma HLS AGGREGATE compact = auto variable = jcoupMemBank0
 #pragma HLS AGGREGATE compact = auto variable = jcoupMemBank1
 #pragma HLS AGGREGATE compact = auto variable = qubitsMem
+#pragma HLS AGGREGATE compact = auto variable = qubitsHistory
 
     /* Caches and Static Memory */
     qubitPack_t qubitsCache[MAX_TROTTER_NUM][NUM_COL_QUBIT_CACHE];
@@ -385,10 +384,12 @@ SQA_MAIN_LOOP:
             }
 #ifndef __SYNTHESIS__
             if ((step + 1) % 20 == 0) std::cout << (step + 1) << " iterations done..." << std::endl;
+#endif
+        RECORD_HISTORY:
             for (u32_t trotIdx = 0; trotIdx < MAX_TROTTER_NUM; trotIdx++)
                 for (u32_t colIdx = 0; colIdx < NUM_COL_QUBIT_CACHE; colIdx++)
-                    qubitsMemLogHW[step][trotIdx][colIdx] = qubitsCache[trotIdx][colIdx];
-#endif
+#pragma HLS PIPELINE
+                    qubitsHistory[step][trotIdx][colIdx] = qubitsCache[trotIdx][colIdx];
         }
     }
 

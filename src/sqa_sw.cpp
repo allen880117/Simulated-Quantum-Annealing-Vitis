@@ -113,11 +113,10 @@ FILL_RNDNUM_CACHE:
     }
 }
 
-qubit_t qubitsLogSW[MAX_STEP_NUM][MAX_TROTTER_NUM][MAX_QUBIT_NUM];
-
 void RunSQASoftware(u32_t nTrotters, u32_t nQubits, u32_t nSteps, fp_t beta, i32_t initRndNumSeed,
                     fp_t jcoup[MAX_QUBIT_NUM][MAX_QUBIT_NUM], fp_t hMem[MAX_QUBIT_NUM],
-                    fp_t jperpMem[MAX_STEP_NUM], qubit_t qubits[MAX_TROTTER_NUM][MAX_QUBIT_NUM])
+                    fp_t jperpMem[MAX_STEP_NUM], qubit_t qubits[MAX_TROTTER_NUM][MAX_QUBIT_NUM],
+                    qubit_t qubitsHistory[MAX_STEP_NUM][MAX_TROTTER_NUM][MAX_QUBIT_NUM])
 {
     /* Caches and Static Memory */
     fp_t  rndNumMem0[MAX_TROTTER_NUM][NUM_COL_RNDNUM_CACHE];
@@ -148,7 +147,7 @@ void RunSQASoftware(u32_t nTrotters, u32_t nQubits, u32_t nSteps, fp_t beta, i32
             if ((step + 1) % 20 == 0) std::cout << (step + 1) << " iterations done..." << std::endl;
             for (u32_t trotIdx = 0; trotIdx < MAX_TROTTER_NUM; trotIdx++)
                 for (u32_t colIdx = 0; colIdx < MAX_QUBIT_NUM; colIdx++)
-                    qubitsLogSW[step][trotIdx][colIdx] = qubits[trotIdx][colIdx];
+                    qubitsHistory[step][trotIdx][colIdx] = qubits[trotIdx][colIdx];
         }
     }
 }
