@@ -151,24 +151,26 @@ PREFETCH_RNDNUM:
     }
 }
 
-static void updateState(u32_t stage, state_t state[MAX_TROTTER_NUM], fp_t hCache[MAX_QUBIT_NUM],
-                        fp_t        rndNumPrefetch[MAX_TROTTER_NUM],
+static void updateState(u32_t stage, u32_t nTrotters, state_t state[MAX_TROTTER_NUM],
+                        fp_t hCache[MAX_QUBIT_NUM], fp_t rndNumPrefetch[MAX_TROTTER_NUM],
                         qubitPack_t qubitsCache[MAX_TROTTER_NUM][NUM_COL_QUBIT_CACHE])
 {
 UPDATE_INPUT_STATE:
     for (u32_t trotIdx = 0; trotIdx < MAX_TROTTER_NUM; trotIdx++) {
 #pragma HLS UNROLL factor = 4
-        u32_t colIdx    = ((stage + MAX_QUBIT_NUM - trotIdx) & (MAX_QUBIT_NUM - 1));
-        u32_t upTrotIdx = (trotIdx == 0) ? (MAX_TROTTER_NUM - 1) : (trotIdx - 1);
-        u32_t dwTrotIdx = (trotIdx == MAX_TROTTER_NUM - 1) ? (0) : (trotIdx + 1);
-        u32_t packIdx   = colIdx / PACKET_SIZE;
-        u32_t qubitIdx  = colIdx % PACKET_SIZE;
-        state[trotIdx]  = state_t{.packIdx  = packIdx,
-                                 .qubitIdx = qubitIdx,
-                                 .upQubit  = qubitsCache[upTrotIdx][packIdx][qubitIdx],
-                                 .dwQubit  = qubitsCache[dwTrotIdx][packIdx][qubitIdx],
-                                 .h        = hCache[colIdx],
-                                 .rndNum   = rndNumPrefetch[trotIdx]};
+        if (trotIdx < nTrotters) {
+            u32_t colIdx    = ((stage + MAX_QUBIT_NUM - trotIdx) & (MAX_QUBIT_NUM - 1));
+            u32_t upTrotIdx = (trotIdx == 0) ? (nTrotters - 1) : (trotIdx - 1);
+            u32_t dwTrotIdx = (trotIdx == nTrotters - 1) ? (0) : (trotIdx + 1);
+            u32_t packIdx   = colIdx / PACKET_SIZE;
+            u32_t qubitIdx  = colIdx % PACKET_SIZE;
+            state[trotIdx]  = state_t{.packIdx  = packIdx,
+                                     .qubitIdx = qubitIdx,
+                                     .upQubit  = qubitsCache[upTrotIdx][packIdx][qubitIdx],
+                                     .dwQubit  = qubitsCache[dwTrotIdx][packIdx][qubitIdx],
+                                     .h        = hCache[colIdx],
+                                     .rndNum   = rndNumPrefetch[trotIdx]};
+        }
     }
 }
 
@@ -250,7 +252,7 @@ INIT_INFO:
 LOOP_STAGE:
     for (i32_t stage = -1; stage < (MAX_QUBIT_NUM + MAX_TROTTER_NUM - 1); stage++) {
 #pragma HLS PIPELINE off
-        if (stage != -1) updateState(stage, state, hCache, rndNumPrefetch, qubitsCache);
+        if (stage != -1) updateState(stage, nTrotters, state, hCache, rndNumPrefetch, qubitsCache);
         prefetchRndNum(stage, rndNumCache, rndNumPrefetch);
         if (stage != -1)
             shiftJcoupCache(stage, jcoupCacheBank0, jcoupCacheBank1, jcoupPrefetch0,

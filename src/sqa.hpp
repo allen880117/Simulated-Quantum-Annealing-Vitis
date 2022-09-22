@@ -28,11 +28,11 @@
     #define LOG2_JCOUP_BANK_NUM 1
     #define NUM_FADD            64
 #else
-    #define MAX_TROTTER_NUM     4
-    #define MAX_QUBIT_NUM       32
+    #define MAX_TROTTER_NUM     16
+    #define MAX_QUBIT_NUM       128
     #define MAX_STEP_NUM        1024
-    #define PACKET_SIZE         16
-    #define LOG2_PACKET_SIZE    4
+    #define PACKET_SIZE         64
+    #define LOG2_PACKET_SIZE    6
     #define JCOUP_BANK_NUM      2
     #define LOG2_JCOUP_BANK_NUM 1
     #define NUM_FADD            64
