@@ -56,6 +56,11 @@ typedef ap_uint<PACKET_SIZE> qubitPack_t;
 #define NUM_COL_JCOUP_MEM_BANK (MAX_QUBIT_NUM / PACKET_SIZE / JCOUP_BANK_NUM)
 #define NUM_COL_RNDNUM_CACHE   (MAX_QUBIT_NUM)
 
+#ifndef __SYNTHESIS__
+extern qubitPack_t qubitsMemLogHW[MAX_STEP_NUM][MAX_TROTTER_NUM][NUM_COL_QUBIT_CACHE];
+extern qubit_t qubitsLogSW[MAX_STEP_NUM][MAX_TROTTER_NUM][MAX_QUBIT_NUM];
+#endif
+
 /* Prototype of Functions */
 extern "C" {
 void RunSQAHardwareOneStep(u32_t nTrotters, u32_t nQubits, fp_t jperp, fp_t hCache[MAX_QUBIT_NUM],
@@ -67,8 +72,7 @@ void RunSQAHardware(u32_t nTrotters, u32_t nQubits, u32_t nSteps, fp_t beta, i32
                     fpPack_t jcoupMemBank0[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
                     fpPack_t jcoupMemBank1[MAX_QUBIT_NUM][NUM_COL_JCOUP_MEM_BANK],
                     fp_t hMem[MAX_QUBIT_NUM], fp_t jperpMem[MAX_STEP_NUM],
-                    qubitPack_t qubitsMem[MAX_TROTTER_NUM][NUM_COL_QUBIT_MEM],
-                    qubitPack_t qubitsHistory[MAX_STEP_NUM][MAX_TROTTER_NUM][NUM_COL_QUBIT_MEM]);
+                    qubitPack_t qubitsMem[MAX_TROTTER_NUM][NUM_COL_QUBIT_MEM]);
 }
 
 void RunSQASoftwareOneStep(u32_t nTrotters, u32_t nQubits, fp_t jperp, fp_t h[MAX_QUBIT_NUM],
@@ -77,5 +81,4 @@ void RunSQASoftwareOneStep(u32_t nTrotters, u32_t nQubits, fp_t jperp, fp_t h[MA
                            qubit_t qubits[MAX_TROTTER_NUM][MAX_QUBIT_NUM]);
 void RunSQASoftware(u32_t nTrotters, u32_t nQubits, u32_t nSteps, fp_t beta, i32_t initRndNumSeed,
                     fp_t jcoup[MAX_QUBIT_NUM][MAX_QUBIT_NUM], fp_t hMem[MAX_QUBIT_NUM],
-                    fp_t jperpMem[MAX_STEP_NUM], qubit_t qubits[MAX_TROTTER_NUM][MAX_QUBIT_NUM],
-                    qubit_t qubitsHistory[MAX_STEP_NUM][MAX_TROTTER_NUM][MAX_QUBIT_NUM]);
+                    fp_t jperpMem[MAX_STEP_NUM], qubit_t qubits[MAX_TROTTER_NUM][MAX_QUBIT_NUM]);

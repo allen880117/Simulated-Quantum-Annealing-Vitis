@@ -20,12 +20,6 @@ fpPack_t JcoupPack[MAX_QUBIT_NUM][MAX_QUBIT_NUM / PACKET_SIZE];
 fpPack_t JcoupPackBank0[MAX_QUBIT_NUM][MAX_QUBIT_NUM / PACKET_SIZE / JCOUP_BANK_NUM];
 fpPack_t JcoupPackBank1[MAX_QUBIT_NUM][MAX_QUBIT_NUM / PACKET_SIZE / JCOUP_BANK_NUM];
 
-#if U50
-qubitPack_t qubitsMemLogHW[MAX_STEP_NUM][MAX_TROTTER_NUM][NUM_COL_QUBIT_CACHE];
-#else
-qubit_t qubitsLogSW[MAX_STEP_NUM][MAX_TROTTER_NUM][MAX_QUBIT_NUM];
-#endif
-
 u32_t       nTrotters = 16;
 u32_t       nQubits   = MAX_QUBIT_NUM;
 qubit_t     qubits[MAX_TROTTER_NUM][MAX_QUBIT_NUM];
@@ -84,10 +78,9 @@ static void warp_execution(std::ofstream &energyLog)
 
 #if U50
     RunSQAHardware(nTrotters, nQubits, nSteps, 1.0f / T, 0, JcoupPackBank0, JcoupPackBank1, h,
-                   jperpMem, qubitsPack, qubitsMemLogHW);
+                   jperpMem, qubitsPack);
 #else
-    RunSQASoftware(nTrotters, nQubits, nSteps, 1.0f / T, 0, Jcoup, h, jperpMem, qubits,
-                   qubitsLogSW);
+    RunSQASoftware(nTrotters, nQubits, nSteps, 1.0f / T, 0, Jcoup, h, jperpMem, qubits);
 #endif
 
     for (u32_t i = 0; i < nSteps; i++) {
