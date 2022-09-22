@@ -26,16 +26,17 @@ qubitPack_t qubitsMemLogHW[MAX_STEP_NUM][MAX_TROTTER_NUM][NUM_COL_QUBIT_CACHE];
 qubit_t qubitsLogSW[MAX_STEP_NUM][MAX_TROTTER_NUM][MAX_QUBIT_NUM];
 #endif
 
-u32_t       nTrotters = MAX_TROTTER_NUM;
+u32_t       nTrotters = 16;
 u32_t       nQubits   = MAX_QUBIT_NUM;
 qubit_t     qubits[MAX_TROTTER_NUM][MAX_QUBIT_NUM];
 qubitPack_t qubitsPack[MAX_TROTTER_NUM][MAX_QUBIT_NUM / PACKET_SIZE];
 fp_t        h[MAX_QUBIT_NUM];
 fp_t        prbNumbers[MAX_QUBIT_NUM];
 
-const int  nSteps     = 500;   // default 500
-const fp_t gammaStart = 3.0f;  // default 3.0f
-const fp_t T          = 0.3f;  // default 0.3f
+const int  nSteps     = 100;     // default 500
+const fp_t gammaStart = 10.0f;   // default 3.0f
+const fp_t gammaEnd   = 0.001f;  // default 0.001f
+const fp_t T          = 0.1f;    // default 0.3f
 
 static void warp_execution(std::ofstream &energyLog);
 static void unwarp_execution(std::ofstream &energyLog);
@@ -46,7 +47,7 @@ int main(int argc, char **argv)
     std::cout << "* U50       : " << U50 << std::endl;
     std::cout << "* WARP_MODE : " << WARP_MODE << std::endl;
     std::cout << "* #SPIN     : " << MAX_QUBIT_NUM << std::endl;
-    std::cout << "* #TROTTER  : " << MAX_TROTTER_NUM << std::endl;
+    std::cout << "* #TROTTER  : " << nTrotters << std::endl;
 
     GenerateJcoupNP(nQubits, Jcoup, prbNumbers);
     GenerateHNP(nQubits, h);
@@ -73,10 +74,12 @@ static void warp_execution(std::ofstream &energyLog)
     fp_t minEnergy = -1.0f;
     fp_t jperpMem[MAX_STEP_NUM];
 
+    fp_t r        = pow(gammaEnd / gammaStart, 1.0f / (fp_t)(nSteps - 1));
+    fp_t curGamma = gammaStart;
     for (u32_t i = 0; i < nSteps; i++) {
-        fp_t gamma  = gammaStart * (1.0f - ((fp_t)i / (fp_t)nSteps));
-        fp_t jperp  = -0.5 * T * log(tanh(gamma / (fp_t)nTrotters / T));
+        fp_t jperp  = -0.5 * T * log(tanh(curGamma / (fp_t)nTrotters / T));
         jperpMem[i] = jperp;
+        curGamma *= r;
     }
 
 #if U50
